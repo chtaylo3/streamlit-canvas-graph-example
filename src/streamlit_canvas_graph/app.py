@@ -93,6 +93,15 @@ def ring_figure(metrics: dict[str, dict[str, int]]) -> go.Figure:
     return figure
 
 
+def save_sibling_preferences(kind: str) -> None:
+    # Store outside widget state so Streamlit's cleanup on navigation cannot
+    # discard settings for a node type whose controls are no longer rendered.
+    st.session_state.sibling_preferences[kind] = (
+        st.session_state[f"siblings-enabled-{kind}"],
+        st.session_state[f"siblings-opacity-{kind}"] / 100,
+    )
+
+
 def select_node(
     node_id: str,
     *,
@@ -194,8 +203,7 @@ def canvas_panel(
     current_repository: str | None,
     direct_ids: set[str],
     highlight_paths: bool,
-    show_context: bool,
-    context_opacity: float,
+    sibling_policies: dict[str, tuple[bool, float]],
 ) -> None:
     """Render the canvas in isolation from the rest of the page.
 
@@ -225,9 +233,8 @@ def canvas_panel(
         direct_ids=direct_ids,
         highlight_paths=highlight_paths,
         context_graph=graph,
-        context_anchor=current_repository,
-        show_context=show_context,
-        context_opacity=context_opacity,
+        context_anchor=st.session_state.focus_id,
+        sibling_policies=sibling_policies,
     )
     clicked = result.selected_node_ids[-1] if result.selected_node_ids else None
     if clicked in graph and clicked != st.session_state.get("selected_id"):
@@ -354,18 +361,34 @@ def main() -> None:
             )
             st.rerun()
     with st.expander("Canvas display"):
-        show_context = st.checkbox("Show other repositories", value=False)
-        context_opacity = (
-            st.slider(
-                "Other repository opacity (%)",
-                10,
-                80,
-                20,
-                10,
-                disabled=not show_context,
-                help="Higher percentages make context repositories more opaque. They use only the remaining canvas budget.",
-            )
-            / 100
+        sibling_kind = graph.nodes[focus_id]["node_type"]
+        preferences = st.session_state.setdefault("sibling_preferences", {})
+        enabled, opacity = preferences.get(sibling_kind, (False, 0.2))
+        enabled_key = f"siblings-enabled-{sibling_kind}"
+        opacity_key = f"siblings-opacity-{sibling_kind}"
+        st.session_state.setdefault(enabled_key, enabled)
+        st.session_state.setdefault(opacity_key, round(opacity * 100))
+        st.caption(f"Sibling settings for {sibling_kind} nodes")
+        st.toggle(
+            "Show siblings",
+            key=enabled_key,
+            on_change=save_sibling_preferences,
+            args=(sibling_kind,),
+        )
+        st.slider(
+            "Opacity",
+            10,
+            80,
+            step=10,
+            key=opacity_key,
+            on_change=save_sibling_preferences,
+            args=(sibling_kind,),
+            help="Percent opaque. Settings are remembered separately for each node type. Siblings use only the remaining canvas budget.",
+        )
+        sibling_policies = dict(preferences)
+        sibling_policies[sibling_kind] = (
+            st.session_state[enabled_key],
+            st.session_state[opacity_key] / 100,
         )
         policies = {}
         labels = {
@@ -481,8 +504,7 @@ def main() -> None:
             current_repository=current_repository,
             direct_ids=direct_ids,
             highlight_paths=highlight_paths,
-            show_context=show_context,
-            context_opacity=context_opacity,
+            sibling_policies=sibling_policies,
         )
     with details:
         if manifest_id and graph.nodes[focus_id]["node_type"] == "dependency":

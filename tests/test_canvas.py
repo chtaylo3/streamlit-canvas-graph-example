@@ -102,3 +102,37 @@ def test_real_context_emphasis_preserves_both_manifest_categories() -> None:
             group.display == display and group.threshold == 8
             for group in schema.node_types["manifest"].child_groups
         )
+
+
+def test_sibling_policy_uses_focused_type_without_expanding_children(monkeypatch):
+    import streamlit_canvas_graph.canvas as module
+
+    graph = nx.DiGraph()
+    for node, kind in (
+        ("account", "account"),
+        ("repo", "repository"),
+        ("other-repo", "repository"),
+        ("manifest", "manifest"),
+        ("sibling", "manifest"),
+        ("hidden", "dependency"),
+    ):
+        graph.add_node(node, node_type=kind, name=node)
+    for a, b, kind in (
+        ("account", "repo", "owns"),
+        ("account", "other-repo", "owns"),
+        ("repo", "manifest", "contains"),
+        ("repo", "sibling", "contains"),
+        ("sibling", "hidden", "depends_on"),
+    ):
+        graph.add_edge(a, b, edge_type=kind)
+    visible = graph.subgraph({"account", "repo", "manifest"})
+    monkeypatch.setattr(module, "graph_canvas", lambda data, *args, **kwargs: data)
+    result = module.dependency_canvas(
+        visible,
+        key="test",
+        context_graph=graph,
+        context_anchor="manifest",
+        sibling_policies={"manifest": (True, 0.4), "repository": (False, 0.2)},
+    )
+    assert {n.id for n in result.nodes} == {"account", "repo", "manifest", "sibling"}
+    assert next(n for n in result.nodes if n.id == "sibling").opacity == 0.4

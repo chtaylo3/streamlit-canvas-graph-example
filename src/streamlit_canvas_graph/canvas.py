@@ -286,8 +286,7 @@ def dependency_canvas(
     key: str,
     context_graph: nx.DiGraph | None = None,
     context_anchor: str | None = None,
-    show_context: bool = False,
-    context_opacity: float = 0.2,
+    sibling_policies: dict[str, tuple[bool, float]] | None = None,
     policies: dict[str, tuple[GroupDisplay, int]] | None = None,
 ) -> CanvasResult:
     """Render a dependency graph through the installed graph-canvas packages."""
@@ -299,29 +298,37 @@ def dependency_canvas(
         direct_ids=direct_ids,
         highlight_paths=highlight_paths,
     )
-    if show_context and context_graph is not None and context_anchor is not None:
-        repositories = context_graph.subgraph(
-            n
-            for n, data in context_graph.nodes(data=True)
-            if data["node_type"] in {"account", "repository"}
-        )
-        available = build_canvas_graph(repositories)
-        available = GraphData(
-            tuple(
-                replace(n, badges={"children": context_graph.out_degree(n.id)})
-                for n in available.nodes
-            ),
-            tuple(replace(e, id=f"context-{e.id}") for e in available.edges),
-        )
-        visible = add_sibling_context(
-            visible,
-            available,
-            context_anchor,
-            enabled=True,
-            opacity=context_opacity,
-            max_elements=CANVAS_ELEMENT_BUDGET,
-            relationship_types=frozenset({"owns"}),
-        )
+    if context_graph is not None and context_anchor in context_graph:
+        kind = context_graph.nodes[context_anchor]["node_type"]
+        enabled, opacity = (sibling_policies or {}).get(kind, (False, 0.2))
+        if enabled:
+            parents = set(context_graph.predecessors(context_anchor)) & set(graph)
+            candidates = {
+                n
+                for parent in parents
+                for n in context_graph.successors(parent)
+                if context_graph.nodes[n]["node_type"] == kind
+            }
+            available = build_canvas_graph(
+                context_graph.subgraph(parents | candidates), direct_ids=direct_ids
+            )
+            available = GraphData(
+                tuple(
+                    replace(n, badges={"children": context_graph.out_degree(n.id)})
+                    if n.type in {"account", "repository"}
+                    else n
+                    for n in available.nodes
+                ),
+                tuple(replace(e, id=f"context-{e.id}") for e in available.edges),
+            )
+            visible = add_sibling_context(
+                visible,
+                available,
+                context_anchor,
+                enabled=True,
+                opacity=opacity,
+                max_elements=CANVAS_ELEMENT_BUDGET,
+            )
     return graph_canvas(
         visible,
         dependency_schema(policies),

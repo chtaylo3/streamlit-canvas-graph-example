@@ -260,14 +260,26 @@ lists up to 20 representative indirect chains alongside its direct status. The
 500-element canvas budget still applies, so only loaded portions are highlighted.
 Resolution membership and repository ownership retain their separate styling.
 
-In **Canvas display**, **Show other repositories** optionally keeps sibling
-repositories visible without expanding their manifests. **Other repository
-opacity (%)** ranges from 10% to 80% (default 20%; higher is more opaque).
-The main view has priority: sibling nodes and their ownership edges are added
-only when they fit the remaining 500-element budget. Click a faded repository to
-make it the focus. Context is off by default.
+In **Canvas display**, **Show siblings** and **Opacity** apply to the focused
+node's type. Each type remembers its own values during the session, including
+when navigating up a level and back down to a different node of that type.
+Opacity ranges from 10% to 80% (default 20%; higher is more opaque). Siblings are
+same-type nodes sharing a visible parent and relationship category; their
+children are not expanded. Existing view content takes priority over context
+when applying the 500-element budget. Siblings remain clickable.
 
-Developers can hard-code `show_context=True` and `context_opacity=0.2` when calling
-`dependency_canvas`, passing `context_graph` and `context_anchor`, or wire those
-arguments to UI controls as this app does. The reusable package exposes the same
-selection behavior through `add_sibling_context`; see its API documentation.
+Developers can hard-code policies per node type, or expose their own controls:
+
+```python
+sibling_policies = {
+    "repository": (True, 0.2),
+    "manifest": (True, 0.5),
+    "dependency": (False, 0.2),
+}
+# Pass these to dependency_canvas along with context_graph and
+# context_anchor set to the currently focused node.
+```
+
+Unspecified types default to disabled and 20% opacity. The reusable package's
+`add_sibling_context` already handles arbitrary node types; policy storage and
+UI choices belong to the consuming app.
