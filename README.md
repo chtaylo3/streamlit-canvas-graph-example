@@ -259,3 +259,15 @@ reachable direct dependency and dims unrelated graph elements. The details panel
 lists up to 20 representative indirect chains alongside its direct status. The
 500-element canvas budget still applies, so only loaded portions are highlighted.
 Resolution membership and repository ownership retain their separate styling.
+
+In **Canvas display**, **Show other repositories** optionally keeps sibling
+repositories visible without expanding their manifests. **Other repository
+opacity (%)** ranges from 10% to 80% (default 20%; higher is more opaque).
+The main view has priority: sibling nodes and their ownership edges are added
+only when they fit the remaining 500-element budget. Click a faded repository to
+make it the focus. Context is off by default.
+
+Developers can hard-code `show_context=True` and `context_opacity=0.2` when calling
+`dependency_canvas`, passing `context_graph` and `context_anchor`, or wire those
+arguments to UI controls as this app does. The reusable package exposes the same
+selection behavior through `add_sibling_context`; see its API documentation.

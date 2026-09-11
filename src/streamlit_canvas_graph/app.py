@@ -194,6 +194,8 @@ def canvas_panel(
     current_repository: str | None,
     direct_ids: set[str],
     highlight_paths: bool,
+    show_context: bool,
+    context_opacity: float,
 ) -> None:
     """Render the canvas in isolation from the rest of the page.
 
@@ -222,6 +224,10 @@ def canvas_panel(
         policies=policies,
         direct_ids=direct_ids,
         highlight_paths=highlight_paths,
+        context_graph=graph,
+        context_anchor=current_repository,
+        show_context=show_context,
+        context_opacity=context_opacity,
     )
     clicked = result.selected_node_ids[-1] if result.selected_node_ids else None
     if clicked in graph and clicked != st.session_state.get("selected_id"):
@@ -348,6 +354,19 @@ def main() -> None:
             )
             st.rerun()
     with st.expander("Canvas display"):
+        show_context = st.checkbox("Show other repositories", value=False)
+        context_opacity = (
+            st.slider(
+                "Other repository opacity (%)",
+                10,
+                80,
+                20,
+                10,
+                disabled=not show_context,
+                help="Higher percentages make context repositories more opaque. They use only the remaining canvas budget.",
+            )
+            / 100
+        )
         policies = {}
         labels = {
             "tree": "Always tree",
@@ -462,6 +481,8 @@ def main() -> None:
             current_repository=current_repository,
             direct_ids=direct_ids,
             highlight_paths=highlight_paths,
+            show_context=show_context,
+            context_opacity=context_opacity,
         )
     with details:
         if manifest_id and graph.nodes[focus_id]["node_type"] == "dependency":

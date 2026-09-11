@@ -23,6 +23,7 @@ from streamlit_graph_canvas import (
     Region,
     RendererKind,
     RendererRegistry,
+    add_sibling_context,
     enable_renderers,
     graph_canvas,
 )
@@ -283,18 +284,46 @@ def dependency_canvas(
     direct_ids: set[str] | None = None,
     highlight_paths: bool = False,
     key: str,
+    context_graph: nx.DiGraph | None = None,
+    context_anchor: str | None = None,
+    show_context: bool = False,
+    context_opacity: float = 0.2,
     policies: dict[str, tuple[GroupDisplay, int]] | None = None,
 ) -> CanvasResult:
     """Render a dependency graph through the installed graph-canvas packages."""
 
+    visible = build_canvas_graph(
+        graph,
+        dimmed_ids=dimmed_ids,
+        emphasized_edges=emphasized_edges,
+        direct_ids=direct_ids,
+        highlight_paths=highlight_paths,
+    )
+    if show_context and context_graph is not None and context_anchor is not None:
+        repositories = context_graph.subgraph(
+            n
+            for n, data in context_graph.nodes(data=True)
+            if data["node_type"] in {"account", "repository"}
+        )
+        available = build_canvas_graph(repositories)
+        available = GraphData(
+            tuple(
+                replace(n, badges={"children": context_graph.out_degree(n.id)})
+                for n in available.nodes
+            ),
+            tuple(replace(e, id=f"context-{e.id}") for e in available.edges),
+        )
+        visible = add_sibling_context(
+            visible,
+            available,
+            context_anchor,
+            enabled=True,
+            opacity=context_opacity,
+            max_elements=CANVAS_ELEMENT_BUDGET,
+            relationship_types=frozenset({"owns"}),
+        )
     return graph_canvas(
-        build_canvas_graph(
-            graph,
-            dimmed_ids=dimmed_ids,
-            emphasized_edges=emphasized_edges,
-            direct_ids=direct_ids,
-            highlight_paths=highlight_paths,
-        ),
+        visible,
         dependency_schema(policies),
         key=key,
         fit_view=FitView.TOPOLOGY_CHANGE,
