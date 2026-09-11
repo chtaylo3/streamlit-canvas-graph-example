@@ -8,6 +8,7 @@ from streamlit_canvas_graph.database import (
     connect,
     initialize_database,
     insert_node,
+    populate_metrics,
 )
 from streamlit_canvas_graph.github_client import Repository
 from streamlit_canvas_graph.ingestion import (
@@ -216,6 +217,19 @@ def test_npm_relationships_resolve_by_location_before_identity_collapse(
         """,
         [snapshot_id],
     ).fetchall()
+    populate_metrics(connection, snapshot_id)
+    parent_scope = dict(
+        connection.execute(
+            """
+            SELECT category, count FROM ring_metrics
+            JOIN nodes ON nodes.snapshot_id = ring_metrics.snapshot_id
+                      AND nodes.node_id = ring_metrics.node_id
+            WHERE ring_metrics.snapshot_id = ? AND nodes.name = 'parent'
+              AND dimension = 'scope'
+            """,
+            [snapshot_id],
+        ).fetchall()
+    )
     connection.close()
 
     assert [(row[0], row[1], row[2], row[3], row[4]) for row in relationships] == [
@@ -245,6 +259,8 @@ def test_npm_relationships_resolve_by_location_before_identity_collapse(
     root_optional_metadata = json.loads(direct_relationships[3][2])
     assert root_optional_metadata["relationships"] == ["optional"]
     assert root_optional_metadata["optional"] is True
+    assert parent_scope["direct"] == 2
+    assert parent_scope["peers"] == 1
     assert resolves == [("orphan",)]
 
 

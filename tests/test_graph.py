@@ -1,11 +1,14 @@
 import networkx as nx
 
 from streamlit_canvas_graph.graph import (
+    add_peer_children,
     bounded_neighborhood,
     breadcrumb_path,
     emphasized_context_edges,
+    peer_relationships,
     repository_scope,
     scoped_explore_paths,
+    structural_projection,
 )
 
 
@@ -35,8 +38,103 @@ def test_bounded_neighborhood_reports_truncation() -> None:
         graph.add_edge("root", str(index))
     visible, hidden = bounded_neighborhood(graph, "root", limit=4)
     assert "root" in visible
-    assert len(visible) == 4
-    assert hidden == 7
+    assert visible.number_of_nodes() + visible.number_of_edges() <= 4
+    assert len(visible) == 2
+    assert hidden == 9
+
+
+def test_peer_relationships_are_not_part_of_structural_navigation() -> None:
+    graph = nx.DiGraph()
+    graph.add_node("package", name="package", node_type="dependency")
+    graph.add_node("peer", name="react", version="19.1.0", node_type="dependency")
+    graph.add_edge(
+        "package",
+        "peer",
+        edge_type="peer_requires",
+        relationship_types={"peer_requires"},
+        relationship_metadata={
+            "peer_requires": [
+                {"requested": "^19", "optional": False},
+            ]
+        },
+    )
+
+    structural = structural_projection(graph)
+
+    assert not structural.has_edge("package", "peer")
+    assert peer_relationships(graph, "package") == [
+        {
+            "target_id": "peer",
+            "name": "react",
+            "version": "19.1.0",
+            "requested": "^19",
+            "optional": False,
+        }
+    ]
+
+
+def test_peer_children_are_eager_and_budget_bounded() -> None:
+    relationship_graph = nx.DiGraph()
+    relationship_graph.add_node(
+        "package", name="package", node_type="dependency", ecosystem="npm"
+    )
+    for index, optional in enumerate((False, True)):
+        target = f"peer-{index}"
+        relationship_graph.add_node(
+            target,
+            name=target,
+            version="1.0.0",
+            node_type="dependency",
+            ecosystem="npm",
+        )
+        relationship_graph.add_edge(
+            "package",
+            target,
+            edge_type="peer_requires",
+            relationship_types={"peer_requires"},
+            relationship_metadata={
+                "peer_requires": [
+                    {"requested": "^1", "optional": optional},
+                ]
+            },
+        )
+    visible = structural_projection(relationship_graph).subgraph(["package"]).copy()
+
+    eager, hidden = add_peer_children(
+        visible, relationship_graph, "package", max_elements=5
+    )
+    assert hidden == 0
+    assert set(eager) == {"package", "peer-0", "peer-1"}
+    assert eager.number_of_nodes() + eager.number_of_edges() == 5
+    assert {data["edge_type"] for _, _, data in eager.edges(data=True)} == {
+        "peer_requires"
+    }
+    assert eager.edges["package", "peer-1", 0]["optional"] is True
+    limited, hidden = add_peer_children(
+        visible, relationship_graph, "package", max_elements=3
+    )
+    assert hidden == 1
+    assert limited.number_of_nodes() + limited.number_of_edges() == 3
+
+
+def test_peer_children_preserve_parallel_ordinary_relationship() -> None:
+    graph = nx.DiGraph()
+    graph.add_node("a", node_type="dependency", name="a")
+    graph.add_node("b", node_type="dependency", name="b")
+    graph.add_edge(
+        "a",
+        "b",
+        edge_type="depends_on",
+        relationship_types={"depends_on", "peer_requires"},
+    )
+    result, hidden = add_peer_children(
+        structural_projection(graph), graph, "a", max_elements=10
+    )
+    assert hidden == 0
+    assert {data["edge_type"] for _, _, data in result.edges(data=True)} == {
+        "depends_on",
+        "peer_requires",
+    }
 
 
 def test_repository_scoped_paths_and_breadcrumbs() -> None:

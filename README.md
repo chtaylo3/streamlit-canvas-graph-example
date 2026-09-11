@@ -16,6 +16,11 @@ uv run scg demo
 uv run streamlit-canvas-graph
 ```
 
+This checkout uses the locally built graph-canvas wheel stored in
+[`vendor/wheels`](vendor/wheels/README.md). `uv sync` installs that wheel through
+the source override in `pyproject.toml`; no separate manual installation is
+needed. The contrib renderer package remains pinned to its published version.
+
 The demo command writes two deterministic snapshots, Parquet tables, and UUID
 ring thumbnails under the gitignored `data/demo/` directory. The app opens at
 `http://localhost:8501` and uses that dataset by default.
@@ -75,15 +80,15 @@ example secrets file.
 ## User experience
 
 - Account → repository → manifest → shared dependency navigation.
-- Two ancestor levels and one descendant level around the focused node.
+- Two ancestor levels around the focus; two descendant levels for repositories and one for other node types.
 - Ancestors outside the active breadcrumb trail are dimmed while the active
   lineage and immediate descendant edges remain emphasized.
-- A hard 500-node canvas limit with explicit truncation messaging.
+- A hard 500-element (nodes plus edges) canvas limit with explicit truncation messaging.
 - The reusable `streamlit-graph-canvas==0.1.0rc1` component supplies the typed
   graph contract, React Flow canvas, ELK layout, pan/zoom, controls, minimap,
   keyboard navigation, and validated selection state.
 - `streamlit-graph-canvas-contrib==0.1.0rc1` supplies explicitly enabled
-  connection-count badges without application-owned JavaScript.
+  outgoing-child-count badges without application-owned JavaScript.
 - Node metadata or enlarged ring details in the right panel.
 - Snapshot history, global node search, manual refresh, severity cards, and a
   filterable vulnerability table.
@@ -215,3 +220,33 @@ direct-dependency status. Ingestion resolves each repository's
 default branch to an immutable commit SHA and stores SHA-256 hashes for parsed
 manifest and SBOM content. A snapshot is rolled back if any dependency remains
 unreachable from a manifest before metrics and exports are finalized.
+
+## Canvas display
+
+Open **Canvas display** to choose **Always tree**, **Always collection**, or
+**Use cutoff** independently for each owning node type. A cutoff of 8 means
+that each relationship category with eight or more distinct children becomes a
+collection. Smaller categories remain trees. Count markers expand and collapse
+collections without a Python round trip.
+
+**Explore dependency groups** opens the manifest with the most outgoing
+relationships in the selected snapshot. Focusing a repository includes two
+levels of descendants so its manifests' groups can be discovered directly.
+
+Manifest and package category counts replace the old total-degree badge.
+Account and repository badges count outgoing children in the loaded view and
+exclude parent links. The 500-element budget applies to eager data, including
+collapsed members; omitted peers are reported and remain listed in node details.
+Peer relationships now use the same component grouping mechanism as dependencies.
+Optional peers retain their `peer_requires` relationship and have dotted styling.
+
+Cross-repository browser verification (requires the sibling component checkout
+and its Playwright dependencies):
+
+```bash
+cd ../streamlit-graph-canvas/tests/e2e
+node node_modules/@playwright/test/cli.js test --config playwright.example.config.ts
+```
+
+This starts the real app with an isolated synthetic database; it does not modify
+your dependency snapshots.

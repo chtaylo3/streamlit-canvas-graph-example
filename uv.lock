@@ -1107,7 +1107,7 @@ requires-dist = [
     { name = "pytz", specifier = ">=2026.3.post1" },
     { name = "rich", specifier = ">=15.0.0" },
     { name = "streamlit", specifier = ">=1.62.0" },
-    { name = "streamlit-graph-canvas", specifier = "==0.1.0rc1" },
+    { name = "streamlit-graph-canvas", path = "vendor/wheels/d76ff02d3aea/streamlit_graph_canvas-0.1.0rc1-py3-none-any.whl" },
     { name = "streamlit-graph-canvas-contrib", specifier = "==0.1.0rc1" },
     { name = "typer", specifier = ">=0.27.1" },
 ]
@@ -1121,15 +1121,24 @@ dev = [
 [[package]]
 name = "streamlit-graph-canvas"
 version = "0.1.0rc1"
-source = { registry = "https://pypi.org/simple" }
+source = { path = "vendor/wheels/d76ff02d3aea/streamlit_graph_canvas-0.1.0rc1-py3-none-any.whl" }
 dependencies = [
     { name = "packaging" },
     { name = "streamlit" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3f/9f/1f7062157fe0e78c9c5e55280e54c244c55d048553f820df39cbfe403497/streamlit_graph_canvas-0.1.0rc1.tar.gz", hash = "sha256:1b7868845f7baba2303c450f1866e775fb9c0beaa258608a263c2570c0d1c797", size = 705707, upload-time = "2026-09-02T03:07:26.68Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ef/a5/29082cce42f58071d34461e2b69466521085f4fad62560eff90c67597446/streamlit_graph_canvas-0.1.0rc1-py3-none-any.whl", hash = "sha256:4c3ba56dfb4d8a369ddb5ec42956a6e1dcf909f2d78e6d679559510b6ceb8013", size = 684070, upload-time = "2026-09-02T03:07:23.956Z" },
+    { filename = "streamlit_graph_canvas-0.1.0rc1-py3-none-any.whl", hash = "sha256:d76ff02d3aead85d3cc70460c36e8a2a63bd4e6d6fafc4bf88a29873bec63fc0" },
 ]
+
+[package.metadata]
+requires-dist = [
+    { name = "networkx", marker = "extra == 'networkx'", specifier = ">=3.6.1" },
+    { name = "opentelemetry-api", marker = "extra == 'otel'", specifier = ">=1.30,<2" },
+    { name = "packaging", specifier = ">=26.0" },
+    { name = "pillow", marker = "extra == 'atlas'", specifier = ">=12.3.0,<13" },
+    { name = "streamlit", specifier = ">=1.62.0" },
+]
+provides-extras = ["atlas", "networkx", "otel"]
 
 [[package]]
 name = "streamlit-graph-canvas-contrib"

@@ -254,7 +254,14 @@ def populate_metrics(connection: duckdb.DuckDBPyConnection, snapshot_id: str) ->
         dep_ids = [
             row[0]
             for row in connection.execute(
-                """WITH RECURSIVE descendants(id) AS (SELECT ? UNION SELECT e.target_id FROM edges e JOIN descendants d ON e.source_id = d.id WHERE e.snapshot_id = ?) SELECT DISTINCT n.node_id FROM descendants d JOIN nodes n ON n.node_id = d.id WHERE n.snapshot_id = ? AND n.node_type = 'dependency'""",
+                """WITH RECURSIVE descendants(id) AS (
+                       SELECT ? UNION SELECT e.target_id FROM edges e
+                       JOIN descendants d ON e.source_id = d.id
+                       WHERE e.snapshot_id = ? AND e.edge_type != 'peer_requires'
+                   )
+                   SELECT DISTINCT n.node_id FROM descendants d JOIN nodes n
+                     ON n.node_id = d.id
+                   WHERE n.snapshot_id = ? AND n.node_type = 'dependency'""",
                 [node_id, snapshot_id, snapshot_id],
             ).fetchall()
         ]
@@ -262,12 +269,19 @@ def populate_metrics(connection: duckdb.DuckDBPyConnection, snapshot_id: str) ->
         direct = connection.execute(
             """SELECT count(DISTINCT target_id) FROM edges
                WHERE snapshot_id = ? AND source_id = ?
-                 AND edge_type IN ('depends_on', 'optional_depends_on', 'peer_requires')""",
+                 AND edge_type IN ('depends_on', 'optional_depends_on')""",
+            [snapshot_id, node_id],
+        ).fetchone()[0]
+        peers = connection.execute(
+            """SELECT count(DISTINCT target_id) FROM edges
+               WHERE snapshot_id = ? AND source_id = ?
+                 AND edge_type = 'peer_requires'""",
             [snapshot_id, node_id],
         ).fetchone()[0]
         values: list[tuple[str, str, int]] = [
             ("scope", "direct", direct),
             ("scope", "transitive", max(0, len(dep_ids) - direct)),
+            ("scope", "peers", peers),
         ]
         for kind in ("major", "minor", "patch"):
             count = connection.execute(

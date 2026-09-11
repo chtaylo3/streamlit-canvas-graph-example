@@ -1,17 +1,20 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from functools import lru_cache
 
 import networkx as nx
 from streamlit_graph_canvas import (
     BadgeBinding,
     CanvasResult,
+    ChildGroup,
     Edge,
     EdgeStyle,
     EdgeType,
     FitView,
     GraphData,
     GraphSchema,
+    GroupDisplay,
     Node,
     NodeStyle,
     NodeType,
@@ -25,9 +28,11 @@ from streamlit_graph_canvas import (
 _CONTRIB_DISTRIBUTION = "streamlit-graph-canvas-contrib"
 _COUNT_CHIP = "streamlit-graph-canvas/contrib/count-chip"
 CANVAS_ELEMENT_BUDGET = 500
+# Below this a group costs more indirection than the sprawl it saves.
+_GROUP_THRESHOLD = 8
 
 _COUNT_BADGE = BadgeBinding(
-    name="connections",
+    name="children",
     kind=_COUNT_CHIP,
     region=Region.at(164, 10, 34, 22),
 )
@@ -44,6 +49,9 @@ DEPENDENCY_SCHEMA = GraphSchema(
                 text="account_text",
             ),
             badges=(_COUNT_BADGE,),
+            child_groups=(
+                ChildGroup("owns", label="Repositories", display=GroupDisplay.TREE),
+            ),
         ),
         "repository": NodeType(
             "repository",
@@ -54,11 +62,34 @@ DEPENDENCY_SCHEMA = GraphSchema(
                 stroke="repository_border",
             ),
             badges=(_COUNT_BADGE,),
+            child_groups=(
+                ChildGroup("contains", label="Manifests", display=GroupDisplay.TREE),
+            ),
         ),
         "manifest": NodeType(
             "manifest",
             NodeStyle(width=210, height=96, fill="manifest", stroke="manifest_border"),
-            badges=(_COUNT_BADGE,),
+            # Category markers replace the ambiguous total-degree badge.
+            # A lock file names its whole resolution closure, so a manifest can
+            # own hundreds of children. Collapsed groups keep the two kinds
+            # distinguishable without flattening them into one enormous band.
+            child_groups=(
+                ChildGroup(
+                    "depends_on",
+                    label="Direct dependencies",
+                    threshold=_GROUP_THRESHOLD,
+                ),
+                ChildGroup(
+                    "resolves",
+                    label="Resolved packages",
+                    threshold=_GROUP_THRESHOLD,
+                ),
+                ChildGroup(
+                    "optional_depends_on",
+                    label="Optional dependencies",
+                    threshold=_GROUP_THRESHOLD,
+                ),
+            ),
         ),
         "dependency": NodeType(
             "dependency",
@@ -68,13 +99,41 @@ DEPENDENCY_SCHEMA = GraphSchema(
                 fill="dependency",
                 stroke="dependency_border",
             ),
-            badges=(_COUNT_BADGE,),
+            child_groups=(
+                ChildGroup(
+                    "depends_on", label="Dependencies", threshold=_GROUP_THRESHOLD
+                ),
+                ChildGroup(
+                    "optional_depends_on",
+                    label="Optional dependencies",
+                    threshold=_GROUP_THRESHOLD,
+                ),
+                ChildGroup(
+                    "peer_requires",
+                    label="Peer requirements",
+                    threshold=_GROUP_THRESHOLD,
+                ),
+            ),
         ),
     },
     edge_types={
         "depends_on": EdgeType("depends_on"),
-        "emphasized": EdgeType(
-            "emphasized", style=EdgeStyle(stroke="accent", width=2.5)
+        # Without these the renderer folds every unknown relationship into
+        # depends_on, so a lock file's resolution closure looks like direct
+        # dependencies.
+        "resolves": EdgeType(
+            "resolves", style=EdgeStyle(stroke="resolved", width=1, dashed=True)
+        ),
+        "contains": EdgeType(
+            "contains", style=EdgeStyle(stroke="structure", width=1.5)
+        ),
+        "owns": EdgeType("owns", style=EdgeStyle(stroke="structure", width=1.5)),
+        "optional_depends_on": EdgeType(
+            "optional_depends_on",
+            style=EdgeStyle(stroke="optional", width=1, dashed=True),
+        ),
+        "peer_requires": EdgeType(
+            "peer_requires", style=EdgeStyle(stroke="peer", dashed=True)
         ),
     },
     palette={
@@ -87,8 +146,14 @@ DEPENDENCY_SCHEMA = GraphSchema(
         "manifest_border": PaletteTone("#7c3aed", "#a78bfa"),
         "dependency": PaletteTone("#cffafe", "#164e63"),
         "dependency_border": PaletteTone("#0891b2", "#22d3ee"),
+        "peer_border": PaletteTone("#9333ea", "#c084fc"),
+        "peer_text": PaletteTone("#581c87", "#f3e8ff"),
+        "peer": PaletteTone("#9333ea", "#c084fc"),
         "accent": PaletteTone("#2563eb", "#60a5fa"),
         "on_accent": PaletteTone("#ffffff", "#0f172a"),
+        "resolved": PaletteTone("#94a3b8", "#64748b"),
+        "structure": PaletteTone("#475569", "#94a3b8"),
+        "optional": PaletteTone("#a8a29e", "#78716c"),
     },
 )
 
@@ -98,6 +163,43 @@ def _renderer_registry() -> RendererRegistry:
     """Enable the explicitly pinned stock renderer distribution."""
 
     return enable_renderers([_CONTRIB_DISTRIBUTION])
+
+
+def _node_data(data: dict[str, object]) -> dict[str, object]:
+    result: dict[str, object] = {
+        "ecosystem": data.get("ecosystem"),
+        "version": data.get("version"),
+    }
+    metadata = data.get("metadata")
+    if isinstance(metadata, dict) and metadata.get("synthetic"):
+        result["synthetic"] = True
+    if data.get("peer_count") is not None:
+        result["peer_count"] = data["peer_count"]
+    return result
+
+
+def dependency_schema(
+    policies: dict[str, tuple[GroupDisplay, int]] | None = None,
+) -> GraphSchema:
+    """Apply each node type's display policy independently to its categories."""
+    policies = policies or {}
+    return replace(
+        DEPENDENCY_SCHEMA,
+        node_types={
+            name: replace(
+                kind,
+                child_groups=tuple(
+                    replace(
+                        group, display=policies[name][0], threshold=policies[name][1]
+                    )
+                    if name in policies
+                    else group
+                    for group in kind.child_groups
+                ),
+            )
+            for name, kind in DEPENDENCY_SCHEMA.node_types.items()
+        },
+    )
 
 
 def build_canvas_graph(
@@ -115,11 +217,12 @@ def build_canvas_graph(
             id=str(node_id),
             type=str(data["node_type"]),
             label=str(data["name"]),
-            data={
-                "ecosystem": data.get("ecosystem"),
-                "version": data.get("version"),
-            },
-            badges={"connections": int(graph.degree(node_id))},
+            data=_node_data(data),
+            badges=(
+                {"children": len(set(graph.successors(node_id)))}
+                if DEPENDENCY_SCHEMA.node_types[str(data["node_type"])].badges
+                else {}
+            ),
             dimmed=node_id in dimmed,
         )
         for node_id, data in graph.nodes(data=True)
@@ -129,8 +232,18 @@ def build_canvas_graph(
             id=f"edge-{index}",
             source=str(source),
             target=str(target),
-            type="emphasized" if (source, target) in emphasized else "depends_on",
-            data={"relationship": data.get("edge_type", "depends_on")},
+            type=(
+                data.get("edge_type")
+                if data.get("edge_type") in DEPENDENCY_SCHEMA.edge_types
+                else "depends_on"
+            ),
+            emphasized=(source, target) in emphasized,
+            optional=bool(data.get("optional", False)),
+            data={
+                "relationship": data.get("edge_type", "depends_on"),
+                "requested": data.get("requested"),
+                "optional": bool(data.get("optional", False)),
+            },
             dimmed=source in dimmed or target in dimmed,
         )
         for index, (source, target, data) in enumerate(graph.edges(data=True))
@@ -144,6 +257,7 @@ def dependency_canvas(
     dimmed_ids: set[str] | None = None,
     emphasized_edges: set[tuple[str, str]] | None = None,
     key: str,
+    policies: dict[str, tuple[GroupDisplay, int]] | None = None,
 ) -> CanvasResult:
     """Render a dependency graph through the installed graph-canvas packages."""
 
@@ -153,7 +267,7 @@ def dependency_canvas(
             dimmed_ids=dimmed_ids,
             emphasized_edges=emphasized_edges,
         ),
-        DEPENDENCY_SCHEMA,
+        dependency_schema(policies),
         key=key,
         fit_view=FitView.TOPOLOGY_CHANGE,
         max_elements=CANVAS_ELEMENT_BUDGET,
