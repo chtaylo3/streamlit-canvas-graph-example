@@ -1,6 +1,6 @@
 # Local graph-canvas wheel
 
-The example app uses the wheel under `399db762abd6/` through
+The example app uses the wheel under `57424bafc266/` through
 `[tool.uv.sources]` in `pyproject.toml`. Run `uv sync --locked` from the app root.
 Use uv for this checkout: pip does not apply the source override.
 
@@ -12,7 +12,7 @@ It is a local development build using version `0.1.0rc1`, not the PyPI artifact
 of that version. The contrib renderer remains pinned to the published package.
 
 SHA-256:
-`399db762abd66ea5b787bf17f855ab479ec5a8515703199a274534e2a2cd9629`
+`57424bafc26649b713e12ba2b89ac3e8918378c6fded9bf6480c636166c26f36`
 
 The directory uses the first 12 hash characters so each rebuilt artifact has a
 new source path even if its package version has not changed. This prevents a
