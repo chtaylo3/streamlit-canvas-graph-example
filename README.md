@@ -288,3 +288,10 @@ When navigating between siblings under the same visible parents, peer ordering
 and pan/zoom are preserved. Enabling siblings or navigating to a different level
 still fits the new view. The layout may adjust spacing for different descendants.
 The app uses stable relationship IDs for both focused and context edges.
+
+Hierarchy navigation now animates over 250 ms: the canvas stays mounted while the
+next layout is prepared, shared nodes move into place, and entering/leaving nodes
+fade with their edges. The focused node provides continuity between layouts.
+Pan and zoom animate when a new view needs fitting; sibling navigation preserves
+the existing viewport. Rapid navigation interrupts the current transition, and
+reduced-motion browser preferences disable animation automatically.

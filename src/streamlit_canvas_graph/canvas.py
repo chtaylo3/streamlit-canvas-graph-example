@@ -348,6 +348,8 @@ def dependency_canvas(
         dependency_schema(policies),
         key=key,
         fit_view=FitView.INITIAL if preserve_viewport else FitView.TOPOLOGY_CHANGE,
+        transition_ms=250,
+        navigation_anchor=context_anchor,
         max_elements=CANVAS_ELEMENT_BUDGET,
         renderer_registry=_renderer_registry(),
         height=590,
