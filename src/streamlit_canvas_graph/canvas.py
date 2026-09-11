@@ -17,6 +17,7 @@ from streamlit_graph_canvas import (
     GraphData,
     GraphSchema,
     GroupDisplay,
+    LabelPolicy,
     Node,
     NodeStyle,
     NodeType,
@@ -47,6 +48,7 @@ _COUNT_BADGE = BadgeBinding(
 )
 
 DEPENDENCY_SCHEMA = GraphSchema(
+    label_policy=LabelPolicy(),
     node_types={
         "account": NodeType(
             "account",
@@ -246,7 +248,11 @@ def build_canvas_graph(
         Node(
             id=str(node_id),
             type=str(data["node_type"]),
-            label=str(data["name"]),
+            label=str(
+                (data.get("metadata") or {}).get("path") or data["name"]
+                if data["node_type"] == "manifest"
+                else data["name"]
+            ),
             data=_node_data(data),
             badges=(
                 {"children": len(set(graph.successors(node_id)))}
