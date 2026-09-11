@@ -1107,7 +1107,7 @@ requires-dist = [
     { name = "pytz", specifier = ">=2026.3.post1" },
     { name = "rich", specifier = ">=15.0.0" },
     { name = "streamlit", specifier = ">=1.62.0" },
-    { name = "streamlit-graph-canvas", path = "vendor/wheels/60f389b0e52f/streamlit_graph_canvas-0.1.0rc1-py3-none-any.whl" },
+    { name = "streamlit-graph-canvas", path = "vendor/wheels/af338ecf6b88/streamlit_graph_canvas-0.1.0rc1-py3-none-any.whl" },
     { name = "streamlit-graph-canvas-contrib", specifier = "==0.1.0rc1" },
     { name = "typer", specifier = ">=0.27.1" },
 ]
@@ -1121,13 +1121,13 @@ dev = [
 [[package]]
 name = "streamlit-graph-canvas"
 version = "0.1.0rc1"
-source = { path = "vendor/wheels/60f389b0e52f/streamlit_graph_canvas-0.1.0rc1-py3-none-any.whl" }
+source = { path = "vendor/wheels/af338ecf6b88/streamlit_graph_canvas-0.1.0rc1-py3-none-any.whl" }
 dependencies = [
     { name = "packaging" },
     { name = "streamlit" },
 ]
 wheels = [
-    { filename = "streamlit_graph_canvas-0.1.0rc1-py3-none-any.whl", hash = "sha256:60f389b0e52f8a0626e0cef2ebd0a0556d65296e91a5fb6ebbbf6732ba9b3a71" },
+    { filename = "streamlit_graph_canvas-0.1.0rc1-py3-none-any.whl", hash = "sha256:af338ecf6b889fea699c7feb54862d15c9214d18d5dabd09d66a9d1c2fed0bd1" },
 ]
 
 [package.metadata]

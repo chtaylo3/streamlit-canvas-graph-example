@@ -333,3 +333,9 @@ the name cancels the timer. Developers can configure `reveal_delay_ms` or choose
 interactions do not rerun Streamlit.
 Developers can set `GraphSchema.label_policy` globally and replace it per type with
 `NodeType.label_policy`; see the reusable package README for validated combinations.
+
+The vendored component now reuses layout for label-policy and color changes,
+reuses search results during geometry-only transitions, and closes label reveals
+when the canvas moves. Group visibility uses an adjacency traversal before the
+display budget is applied. These changes belong to the reusable component; the
+example receives them through its local wheel pin.
