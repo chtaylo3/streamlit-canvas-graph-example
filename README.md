@@ -326,7 +326,10 @@ Manifest collections and each manifest child relationship category default to a
 cutoff of 12. Labels use the package's fixed-box `LabelPolicy()` default: directory
 context on the first line, filename on the second, and middle ellipsis where needed.
 Manifest paths come from snapshot metadata, with the basename as a fallback.
-Hover or keyboard focus reveals the full label; the ellipsis button pins the full
-text and provides Copy and Close. These interactions do not rerun Streamlit.
+The full label appears after hovering over a shortened name for 600 ms; names
+that fit do not reveal, and hovering elsewhere on a node does not reveal. Leaving
+the name cancels the timer. Developers can configure `reveal_delay_ms` or choose
+`reveal_mode="controls"` for the previous hover/focus/pin/copy behavior. These
+interactions do not rerun Streamlit.
 Developers can set `GraphSchema.label_policy` globally and replace it per type with
 `NodeType.label_policy`; see the reusable package README for validated combinations.
