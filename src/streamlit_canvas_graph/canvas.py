@@ -24,6 +24,7 @@ from streamlit_graph_canvas import (
     Region,
     RendererKind,
     RendererRegistry,
+    SearchField,
     add_sibling_context,
     enable_renderers,
     graph_canvas,
@@ -191,6 +192,9 @@ def _node_data(data: dict[str, object]) -> dict[str, object]:
         "ecosystem": data.get("ecosystem"),
         "version": data.get("version"),
     }
+    metrics = data.get("search_metrics")
+    if isinstance(metrics, dict):
+        result.update(metrics)
     metadata = data.get("metadata")
     if isinstance(metadata, dict) and metadata.get("synthetic"):
         result["synthetic"] = True
@@ -312,6 +316,7 @@ def dependency_canvas(
         direct_ids=direct_ids,
         highlight_paths=highlight_paths,
     )
+    active_search_ids = tuple(n.id for n in visible.nodes if not n.dimmed)
     enabled = False
     if context_graph is not None and context_anchor in context_graph:
         kind = context_graph.nodes[context_anchor]["node_type"]
@@ -353,6 +358,30 @@ def dependency_canvas(
         navigation_anchor=context_anchor,
         max_elements=CANVAS_ELEMENT_BUDGET,
         max_loaded_elements=CANVAS_LOADED_ELEMENT_BUDGET,
+        search_active_ids=active_search_ids,
+        search_reorder_threshold=100,
+        search_nonmatch_opacity=0.25,
+        search_fields=(
+            SearchField(
+                "direct_dependency_count",
+                "Recorded direct dependencies",
+                "number",
+                description="Recorded immediate dependencies, including hidden nodes.",
+            ),
+            SearchField(
+                "high_vulnerabilities",
+                "Recorded high findings",
+                "number",
+                description="Findings on this node only. Zero means none recorded, not proof of safety.",
+            ),
+            SearchField(
+                "critical_transitive_vulnerabilities",
+                "Recorded critical findings below",
+                "number",
+                description="Unique package/advisory findings below this node, including hidden descendants. Shared paths count once; this node is excluded.",
+            ),
+            SearchField("ecosystem", "Ecosystem"),
+        ),
         renderer_registry=_renderer_registry(),
         height=590,
     )

@@ -337,3 +337,59 @@ def vulnerabilities_for_node(
 
 def thumbnail_path(data_root: Path, node_id: str) -> Path:
     return data_root / "thumbnails" / f"{node_id}.png"
+
+
+def node_search_metrics(
+    graph: nx.DiGraph,
+    findings: list[tuple[str, str, str]],
+) -> dict[str, dict[str, int]]:
+    """Recorded metrics, independent of canvas visibility and collection state.
+
+    A finding is a (dependency ID, advisory ID) pair. Critical findings reached
+    through multiple paths are counted once. Transitive counts exclude the node's
+    own findings, including in cyclic graphs. Zero means none recorded, not proof
+    that the package was scanned or is vulnerability-free.
+    """
+    structural = structural_projection(graph)
+    high: dict[str, set[str]] = {}
+    critical = sorted(
+        {
+            (node, advisory)
+            for node, advisory, severity in findings
+            if severity.casefold() == "critical" and node in graph
+        }
+    )
+    own: dict[str, int] = {}
+    for index, (node, _) in enumerate(critical):
+        own[node] = own.get(node, 0) | (1 << index)
+    for node, advisory, severity in findings:
+        if severity.casefold() == "high":
+            high.setdefault(node, set()).add(advisory)
+    dag = nx.condensation(structural)
+    components = dag.graph["mapping"]
+    reachable: dict[int, int] = {}
+    for component in reversed(list(nx.topological_sort(dag))):
+        mask = 0
+        for node in dag.nodes[component]["members"]:
+            mask |= own.get(node, 0)
+        for child in dag.successors(component):
+            mask |= reachable[child]
+        reachable[component] = mask
+    return {
+        node: {
+            "direct_dependency_count": sum(
+                structural.nodes[child].get("node_type") == "dependency"
+                and "depends_on"
+                in structural.edges[node, child].get(
+                    "relationship_types",
+                    {structural.edges[node, child].get("edge_type")},
+                )
+                for child in structural.successors(node)
+            ),
+            "high_vulnerabilities": len(high.get(node, set())),
+            "critical_transitive_vulnerabilities": (
+                reachable[components[node]] & ~own.get(node, 0)
+            ).bit_count(),
+        }
+        for node in structural
+    }

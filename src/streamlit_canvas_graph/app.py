@@ -28,6 +28,7 @@ from streamlit_canvas_graph.graph import (
     emphasized_context_edges,
     load_graph,
     node_metrics,
+    node_search_metrics,
     peer_relationships,
     repository_scope,
     scoped_explore_paths,
@@ -64,7 +65,14 @@ def open_database(path: str) -> duckdb.DuckDBPyConnection:
 def graph_for_snapshot(path: str, snapshot_id: str) -> nx.DiGraph:
     con = duckdb.connect(path, read_only=True)
     try:
-        return load_graph(con, snapshot_id)
+        graph = load_graph(con, snapshot_id)
+        findings = con.execute(
+            "SELECT dependency_id, advisory_id, severity FROM vulnerabilities WHERE snapshot_id = ?",
+            [snapshot_id],
+        ).fetchall()
+        for node, metrics in node_search_metrics(graph, findings).items():
+            graph.nodes[node]["search_metrics"] = metrics
+        return graph
     finally:
         con.close()
 

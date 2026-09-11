@@ -190,3 +190,37 @@ def test_repository_scoped_paths_and_breadcrumbs() -> None:
         ("manifest-a", "direct-a"),
         ("direct-a", "shared"),
     }
+
+
+def test_search_metrics_deduplicate_shared_transitive_findings_and_handle_cycles():
+    from streamlit_canvas_graph.graph import node_search_metrics
+
+    graph = nx.DiGraph()
+    graph.add_nodes_from(
+        (node, {"node_type": "dependency"}) for node in ["a", "b", "c", "d", "peer"]
+    )
+    for source, target in [("a", "b"), ("a", "c"), ("b", "d"), ("c", "d"), ("d", "b")]:
+        graph.add_edge(source, target, edge_type="depends_on")
+    graph.add_edge("a", "peer", edge_type="peer_requires")
+    findings = [
+        ("a", "A", "critical"),
+        ("b", "B", "critical"),
+        ("d", "D", "critical"),
+        ("d", "D", "critical"),
+        ("peer", "P", "critical"),
+        ("a", "H", "high"),
+    ]
+    metrics = node_search_metrics(graph, findings)
+    assert metrics["a"] == {
+        "direct_dependency_count": 2,
+        "high_vulnerabilities": 1,
+        "critical_transitive_vulnerabilities": 2,
+    }
+    assert metrics["b"]["critical_transitive_vulnerabilities"] == 1
+    assert metrics["d"]["critical_transitive_vulnerabilities"] == 1
+    assert metrics["c"]["critical_transitive_vulnerabilities"] == 2
+    # Metrics refer to the graph, not the subset currently displayed on canvas.
+    assert (
+        metrics["a"]["critical_transitive_vulnerabilities"]
+        == metrics["c"]["critical_transitive_vulnerabilities"]
+    )

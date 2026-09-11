@@ -299,3 +299,25 @@ fade with their edges. The focused node provides continuity between layouts.
 Pan and zoom animate when a new view needs fitting; sibling navigation preserves
 the existing viewport. Rapid navigation interrupts the current transition, and
 reduced-motion browser preferences disable animation automatically.
+
+### Search the current view
+
+Open **Find in this view** to search names (comma-separated alternatives), recorded
+direct-dependency counts, recorded high findings, recorded critical findings below
+a node, or ecosystem. Numeric filters support thresholds and all/any combinations.
+Counts are computed from the snapshot graph, including descendants outside the
+canvas. Repeated paths are deduplicated by package/advisory; descendant critical
+counts exclude the node's own findings. Zero means no findings recorded, not that
+the package was scanned or is safe.
+
+Typing highlights matches and dims nonmatches to 25% opacity without reordering.
+**Apply search** moves matches first in collections or peer groups containing at
+least 100 searched, displayed nodes, subject to dependency layers. **Clear search**
+restores normal ordering. Faded sibling context is excluded unless **Include
+context nodes** is checked; collapsed collection members are excluded until
+expanded. These are developer settings supplied to the reusable package.
+
+The example uses local filtering with callbacks disabled. An app can opt into
+**Send filters to app**, but that callback triggers a Streamlit rerun and can repeat
+queries, calculations, and rendering. The package documents this cost and shows
+it beside the optional submission button; typing never submits search callbacks.
