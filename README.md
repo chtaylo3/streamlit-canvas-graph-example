@@ -80,7 +80,7 @@ example secrets file.
 ## User experience
 
 - Account → repository → manifest → shared dependency navigation.
-- Two ancestor levels around the focus; two descendant levels for repositories and one for other node types.
+- Two ancestor levels and one descendant level around the focus. Selecting a repository shows its manifests; selecting a manifest shows its dependencies.
 - Ancestors outside the active breadcrumb trail are dimmed while the active
   lineage and immediate descendant edges remain emphasized.
 - A hard 500-element (nodes plus edges) canvas limit with explicit truncation messaging.

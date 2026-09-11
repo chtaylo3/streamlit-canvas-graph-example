@@ -394,7 +394,7 @@ def main() -> None:
     visible, hidden = bounded_neighborhood(
         graph,
         focus_id,
-        descendants=2 if graph.nodes[focus_id]["node_type"] == "repository" else 1,
+        descendants=1,
         limit=CANVAS_ELEMENT_BUDGET - reserved,
     )
     visible, hidden_peers = add_peer_children(
