@@ -283,3 +283,8 @@ sibling_policies = {
 Unspecified types default to disabled and 20% opacity. The reusable package's
 `add_sibling_context` already handles arbitrary node types; policy storage and
 UI choices belong to the consuming app.
+
+When navigating between siblings under the same visible parents, peer ordering
+and pan/zoom are preserved. Enabling siblings or navigating to a different level
+still fits the new view. The layout may adjust spacing for different descendants.
+The app uses stable relationship IDs for both focused and context edges.

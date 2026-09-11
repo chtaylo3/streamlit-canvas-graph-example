@@ -136,3 +136,16 @@ def test_sibling_policy_uses_focused_type_without_expanding_children(monkeypatch
     )
     assert {n.id for n in result.nodes} == {"account", "repo", "manifest", "sibling"}
     assert next(n for n in result.nodes if n.id == "sibling").opacity == 0.4
+
+
+def test_edge_identity_survives_context_changes_and_parallel_relationships():
+    graph = nx.MultiDiGraph()
+    for node in ("a", "b", "c"):
+        graph.add_node(node, node_type="dependency", name=node)
+    graph.add_edge("a", "b", edge_type="depends_on")
+    graph.add_edge("a", "b", edge_type="peer_requires")
+    graph.add_edge("b", "c", edge_type="depends_on")
+    full = build_canvas_graph(graph)
+    assert len({edge.id for edge in full.edges}) == 3
+    reduced = build_canvas_graph(graph.subgraph({"a", "b"}))
+    assert {edge.id for edge in reduced.edges} <= {edge.id for edge in full.edges}

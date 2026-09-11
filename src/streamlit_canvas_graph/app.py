@@ -224,6 +224,19 @@ def canvas_panel(
             f"The 500-element canvas budget omitted {hidden} additional nodes; these "
             "are not part of collapsed collections. Use search to refocus."
         )
+    focus = st.session_state.focus_id
+    kind = graph.nodes[focus]["node_type"]
+    cohort = (
+        (
+            kind,
+            tuple(sorted(set(graph.predecessors(focus)) & set(visible))),
+        )
+        if sibling_policies.get(kind, (False, 0.2))[0]
+        else None
+    )
+    preserve_viewport = (
+        cohort is not None and st.session_state.get("sibling_view_cohort") == cohort
+    )
     result = dependency_canvas(
         visible,
         dimmed_ids=dimmed_ids,
@@ -235,7 +248,9 @@ def canvas_panel(
         context_graph=graph,
         context_anchor=st.session_state.focus_id,
         sibling_policies=sibling_policies,
+        preserve_viewport=preserve_viewport,
     )
+    st.session_state.sibling_view_cohort = cohort
     clicked = result.selected_node_ids[-1] if result.selected_node_ids else None
     if clicked in graph and clicked != st.session_state.get("selected_id"):
         select_node(

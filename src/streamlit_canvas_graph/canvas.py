@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from functools import lru_cache
 
@@ -250,9 +251,20 @@ def build_canvas_graph(
         )
         for node_id, data in graph.nodes(data=True)
     )
+    records = (
+        graph.edges(keys=True, data=True)
+        if graph.is_multigraph()
+        else (
+            (source, target, 0, data) for source, target, data in graph.edges(data=True)
+        )
+    )
     edges = tuple(
         Edge(
-            id=f"edge-{index}",
+            id="edge-"
+            + json.dumps(
+                [str(source), str(target), repr(edge_key), data.get("edge_type")],
+                separators=(",", ":"),
+            ),
             source=str(source),
             target=str(target),
             type=(
@@ -271,7 +283,7 @@ def build_canvas_graph(
             if highlight_paths
             else source in dimmed or target in dimmed,
         )
-        for index, (source, target, data) in enumerate(graph.edges(data=True))
+        for source, target, edge_key, data in records
     )
     return GraphData(nodes=nodes, edges=edges)
 
@@ -287,6 +299,7 @@ def dependency_canvas(
     context_graph: nx.DiGraph | None = None,
     context_anchor: str | None = None,
     sibling_policies: dict[str, tuple[bool, float]] | None = None,
+    preserve_viewport: bool = False,
     policies: dict[str, tuple[GroupDisplay, int]] | None = None,
 ) -> CanvasResult:
     """Render a dependency graph through the installed graph-canvas packages."""
@@ -298,6 +311,7 @@ def dependency_canvas(
         direct_ids=direct_ids,
         highlight_paths=highlight_paths,
     )
+    enabled = False
     if context_graph is not None and context_anchor in context_graph:
         kind = context_graph.nodes[context_anchor]["node_type"]
         enabled, opacity = (sibling_policies or {}).get(kind, (False, 0.2))
@@ -319,7 +333,7 @@ def dependency_canvas(
                     else n
                     for n in available.nodes
                 ),
-                tuple(replace(e, id=f"context-{e.id}") for e in available.edges),
+                available.edges,
             )
             visible = add_sibling_context(
                 visible,
@@ -333,7 +347,7 @@ def dependency_canvas(
         visible,
         dependency_schema(policies),
         key=key,
-        fit_view=FitView.TOPOLOGY_CHANGE,
+        fit_view=FitView.INITIAL if preserve_viewport else FitView.TOPOLOGY_CHANGE,
         max_elements=CANVAS_ELEMENT_BUDGET,
         renderer_registry=_renderer_registry(),
         height=590,
