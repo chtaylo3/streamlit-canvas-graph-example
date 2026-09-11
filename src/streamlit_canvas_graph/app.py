@@ -425,7 +425,7 @@ def main() -> None:
             "cutoff": "Use cutoff",
         }
         for kind in ("account", "repository", "manifest", "dependency"):
-            default = "tree" if kind in {"account", "repository"} else "cutoff"
+            default = "tree" if kind == "account" else "cutoff"
             columns = st.columns([2, 1])
             mode = columns[0].radio(
                 f"{kind.title()} children",
@@ -438,7 +438,7 @@ def main() -> None:
             threshold = columns[1].number_input(
                 f"{kind.title()} cutoff",
                 min_value=1,
-                value=8,
+                value=12 if kind in {"repository", "manifest"} else 8,
                 step=1,
                 disabled=mode != "cutoff",
                 key=f"cutoff-{kind}",

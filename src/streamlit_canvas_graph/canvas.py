@@ -38,6 +38,7 @@ CANVAS_ELEMENT_BUDGET = 500
 CANVAS_LOADED_ELEMENT_BUDGET = 20_000
 # Below this a group costs more indirection than the sprawl it saves.
 _GROUP_THRESHOLD = 8
+_MANIFEST_GROUP_THRESHOLD = 12
 
 _COUNT_BADGE = BadgeBinding(
     name="children",
@@ -71,7 +72,9 @@ DEPENDENCY_SCHEMA = GraphSchema(
             ),
             badges=(_COUNT_BADGE,),
             child_groups=(
-                ChildGroup("contains", label="Manifests", display=GroupDisplay.TREE),
+                ChildGroup(
+                    "contains", label="Manifests", threshold=_MANIFEST_GROUP_THRESHOLD
+                ),
             ),
         ),
         "manifest": NodeType(
@@ -85,17 +88,17 @@ DEPENDENCY_SCHEMA = GraphSchema(
                 ChildGroup(
                     "depends_on",
                     label="Direct dependencies",
-                    threshold=_GROUP_THRESHOLD,
+                    threshold=_MANIFEST_GROUP_THRESHOLD,
                 ),
                 ChildGroup(
                     "resolves",
                     label="Resolved packages",
-                    threshold=_GROUP_THRESHOLD,
+                    threshold=_MANIFEST_GROUP_THRESHOLD,
                 ),
                 ChildGroup(
                     "optional_depends_on",
                     label="Optional dependencies",
-                    threshold=_GROUP_THRESHOLD,
+                    threshold=_MANIFEST_GROUP_THRESHOLD,
                 ),
             ),
         ),
