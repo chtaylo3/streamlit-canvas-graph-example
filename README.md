@@ -83,7 +83,7 @@ example secrets file.
 - Two ancestor levels and one descendant level around the focus. Selecting a repository shows its manifests; selecting a manifest shows its dependencies.
 - Ancestors outside the active breadcrumb trail are dimmed while the active
   lineage and immediate descendant edges remain emphasized.
-- A hard 500-element (nodes plus edges) canvas limit with explicit truncation messaging.
+- A rendered-element canvas budget applied after grouping, separate from the 20,000-element data-loading limit.
 - The reusable `streamlit-graph-canvas==0.1.0rc1` component supplies the typed
   graph contract, React Flow canvas, ELK layout, pan/zoom, controls, minimap,
   keyboard navigation, and validated selection state.
@@ -230,13 +230,17 @@ collection. Smaller categories remain trees. Count markers expand and collapse
 collections without a Python round trip.
 
 **Explore dependency groups** opens the manifest with the most outgoing
-relationships in the selected snapshot. Focusing a repository includes two
-levels of descendants so its manifests' groups can be discovered directly.
+relationships in the selected snapshot. Focusing a repository loads its manifests; focusing a manifest loads its children.
 
 Manifest and package category counts replace the old total-degree badge.
 Account and repository badges count outgoing children in the loaded view and
-exclude parent links. The 500-element budget applies to eager data, including
-collapsed members; omitted peers are reported and remain listed in node details.
+exclude parent links. A collapsed collection costs one node plus one parent edge.
+Expansion counts each displayed member and only the edges actually drawn;
+replaced membership edges do not count. Full collection totals are retained, with
+shown/total counts and a display notice if expansion cannot fit. The separate
+20,000-element data-loading limit reports omissions from collection totals.
+`CANVAS_ELEMENT_BUDGET` configures the display limit; `CANVAS_LOADED_ELEMENT_BUDGET`
+configures the loaded graph limit.
 Peer relationships now use the same component grouping mechanism as dependencies.
 Optional peers retain their `peer_requires` relationship and have dotted styling.
 
@@ -257,7 +261,7 @@ also sets that context. A package keeps its badge even when other dependencies
 also require it. Selecting a package highlights one shortest chain through each
 reachable direct dependency and dims unrelated graph elements. The details panel
 lists up to 20 representative indirect chains alongside its direct status. The
-500-element canvas budget still applies, so only loaded portions are highlighted.
+rendered-element canvas budget still applies, so only drawn portions are highlighted.
 Resolution membership and repository ownership retain their separate styling.
 
 In **Canvas display**, **Show siblings** and **Opacity** apply to the focused
@@ -266,7 +270,7 @@ when navigating up a level and back down to a different node of that type.
 Opacity ranges from 10% to 80% (default 20%; higher is more opaque). Siblings are
 same-type nodes sharing a visible parent and relationship category; their
 children are not expanded. Existing view content takes priority over context
-when applying the 500-element budget. Siblings remain clickable.
+when applying the display budget. Siblings remain clickable.
 
 Developers can hard-code policies per node type, or expose their own controls:
 

@@ -34,6 +34,7 @@ from .badges import DIRECT_BADGE_KIND, DirectBadgeRenderer
 _CONTRIB_DISTRIBUTION = "streamlit-graph-canvas-contrib"
 _COUNT_CHIP = "streamlit-graph-canvas/contrib/count-chip"
 CANVAS_ELEMENT_BUDGET = 500
+CANVAS_LOADED_ELEMENT_BUDGET = 20_000
 # Below this a group costs more indirection than the sprawl it saves.
 _GROUP_THRESHOLD = 8
 
@@ -341,7 +342,7 @@ def dependency_canvas(
                 context_anchor,
                 enabled=True,
                 opacity=opacity,
-                max_elements=CANVAS_ELEMENT_BUDGET,
+                max_elements=CANVAS_LOADED_ELEMENT_BUDGET,
             )
     return graph_canvas(
         visible,
@@ -351,6 +352,7 @@ def dependency_canvas(
         transition_ms=250,
         navigation_anchor=context_anchor,
         max_elements=CANVAS_ELEMENT_BUDGET,
+        max_loaded_elements=CANVAS_LOADED_ELEMENT_BUDGET,
         renderer_registry=_renderer_registry(),
         height=590,
     )

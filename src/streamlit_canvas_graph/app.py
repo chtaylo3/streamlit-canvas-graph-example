@@ -11,7 +11,11 @@ import plotly.graph_objects as go
 import streamlit as st
 from streamlit_graph_canvas import GroupDisplay
 
-from streamlit_canvas_graph.canvas import CANVAS_ELEMENT_BUDGET, dependency_canvas
+from streamlit_canvas_graph.canvas import (
+    CANVAS_ELEMENT_BUDGET,
+    CANVAS_LOADED_ELEMENT_BUDGET,
+    dependency_canvas,
+)
 from streamlit_canvas_graph.database import create_demo_dataset, snapshot_rows
 from streamlit_canvas_graph.dependency_context import (
     dependency_chains,
@@ -221,8 +225,9 @@ def canvas_panel(
 
     if hidden:
         st.info(
-            f"The 500-element canvas budget omitted {hidden} additional nodes; these "
-            "are not part of collapsed collections. Use search to refocus."
+            f"The {CANVAS_LOADED_ELEMENT_BUDGET:,}-element data-loading limit omitted "
+            f"{hidden} nodes. These are not included in collection totals. "
+            "Use search to refocus."
         )
     focus = st.session_state.focus_id
     kind = graph.nodes[focus]["node_type"]
@@ -434,6 +439,10 @@ def main() -> None:
         st.caption(
             "The cutoff applies separately to each relationship category. Grouping starts at the cutoff."
         )
+        st.caption(
+            f"Canvas budget: {CANVAS_ELEMENT_BUDGET:,} rendered elements. "
+            "Collapsed members and replaced membership edges do not count."
+        )
     candidates = [
         node for node in graph if graph.nodes[node]["node_type"] == "manifest"
     ]
@@ -447,22 +456,22 @@ def main() -> None:
         st.rerun()
     peers = peer_relationships(relationship_graph, focus_id)
     # Reserve capacity for eager peer delivery, leaving room for navigation.
-    reserved = min(len(peers) * 2, CANVAS_ELEMENT_BUDGET // 2)
+    reserved = min(len(peers) * 2, CANVAS_LOADED_ELEMENT_BUDGET // 2)
     visible, hidden = bounded_neighborhood(
         graph,
         focus_id,
         descendants=1,
-        limit=CANVAS_ELEMENT_BUDGET - reserved,
+        limit=CANVAS_LOADED_ELEMENT_BUDGET - reserved,
     )
     visible, hidden_peers = add_peer_children(
         visible,
         relationship_graph,
         focus_id,
-        max_elements=CANVAS_ELEMENT_BUDGET,
+        max_elements=CANVAS_LOADED_ELEMENT_BUDGET,
     )
     if hidden_peers:
         st.info(
-            f"{hidden_peers} peer requirements omitted by the canvas budget. All peers remain listed in node details."
+            f"{hidden_peers} peer requirements omitted by the data-loading limit. All peers remain listed in node details."
         )
     manifests = (
         sorted(
