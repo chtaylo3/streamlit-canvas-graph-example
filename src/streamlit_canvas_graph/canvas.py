@@ -11,6 +11,7 @@ from streamlit_graph_canvas import (
     Edge,
     EdgeStyle,
     EdgeType,
+    EnabledRenderer,
     FitView,
     GraphData,
     GraphSchema,
@@ -20,10 +21,13 @@ from streamlit_graph_canvas import (
     NodeType,
     PaletteTone,
     Region,
+    RendererKind,
     RendererRegistry,
     enable_renderers,
     graph_canvas,
 )
+
+from .badges import DIRECT_BADGE_KIND, DirectBadgeRenderer
 
 _CONTRIB_DISTRIBUTION = "streamlit-graph-canvas-contrib"
 _COUNT_CHIP = "streamlit-graph-canvas/contrib/count-chip"
@@ -99,6 +103,9 @@ DEPENDENCY_SCHEMA = GraphSchema(
                 fill="dependency",
                 stroke="dependency_border",
             ),
+            badges=(
+                BadgeBinding("direct", DIRECT_BADGE_KIND, Region.at(142, 68, 58, 20)),
+            ),
             child_groups=(
                 ChildGroup(
                     "depends_on", label="Dependencies", threshold=_GROUP_THRESHOLD
@@ -117,7 +124,7 @@ DEPENDENCY_SCHEMA = GraphSchema(
         ),
     },
     edge_types={
-        "depends_on": EdgeType("depends_on"),
+        "depends_on": EdgeType("depends_on", style=EdgeStyle(arrow="target")),
         # Without these the renderer folds every unknown relationship into
         # depends_on, so a lock file's resolution closure looks like direct
         # dependencies.
@@ -130,10 +137,10 @@ DEPENDENCY_SCHEMA = GraphSchema(
         "owns": EdgeType("owns", style=EdgeStyle(stroke="structure", width=1.5)),
         "optional_depends_on": EdgeType(
             "optional_depends_on",
-            style=EdgeStyle(stroke="optional", width=1, dashed=True),
+            style=EdgeStyle(stroke="optional", width=1, dashed=True, arrow="target"),
         ),
         "peer_requires": EdgeType(
-            "peer_requires", style=EdgeStyle(stroke="peer", dashed=True)
+            "peer_requires", style=EdgeStyle(stroke="peer", dashed=True, arrow="target")
         ),
     },
     palette={
@@ -162,7 +169,18 @@ DEPENDENCY_SCHEMA = GraphSchema(
 def _renderer_registry() -> RendererRegistry:
     """Enable the explicitly pinned stock renderer distribution."""
 
-    return enable_renderers([_CONTRIB_DISTRIBUTION])
+    stock = enable_renderers([_CONTRIB_DISTRIBUTION])
+    return RendererRegistry(
+        {
+            **stock.renderers,
+            DIRECT_BADGE_KIND: EnabledRenderer(
+                RendererKind(DIRECT_BADGE_KIND, None, None, frozenset({"prims"})),
+                DirectBadgeRenderer(),
+                "streamlit-canvas-graph",
+                "0.1.0",
+            ),
+        }
+    )
 
 
 def _node_data(data: dict[str, object]) -> dict[str, object]:
@@ -207,6 +225,8 @@ def build_canvas_graph(
     *,
     dimmed_ids: set[str] | None = None,
     emphasized_edges: set[tuple[str, str]] | None = None,
+    direct_ids: set[str] | None = None,
+    highlight_paths: bool = False,
 ) -> GraphData:
     """Translate the explorer graph into the public graph-canvas contract."""
 
@@ -220,7 +240,9 @@ def build_canvas_graph(
             data=_node_data(data),
             badges=(
                 {"children": len(set(graph.successors(node_id)))}
-                if DEPENDENCY_SCHEMA.node_types[str(data["node_type"])].badges
+                if data["node_type"] in {"account", "repository"}
+                else {"direct": node_id in (direct_ids or set())}
+                if data["node_type"] == "dependency"
                 else {}
             ),
             dimmed=node_id in dimmed,
@@ -244,7 +266,9 @@ def build_canvas_graph(
                 "requested": data.get("requested"),
                 "optional": bool(data.get("optional", False)),
             },
-            dimmed=source in dimmed or target in dimmed,
+            dimmed=(source, target) not in emphasized
+            if highlight_paths
+            else source in dimmed or target in dimmed,
         )
         for index, (source, target, data) in enumerate(graph.edges(data=True))
     )
@@ -256,6 +280,8 @@ def dependency_canvas(
     *,
     dimmed_ids: set[str] | None = None,
     emphasized_edges: set[tuple[str, str]] | None = None,
+    direct_ids: set[str] | None = None,
+    highlight_paths: bool = False,
     key: str,
     policies: dict[str, tuple[GroupDisplay, int]] | None = None,
 ) -> CanvasResult:
@@ -266,6 +292,8 @@ def dependency_canvas(
             graph,
             dimmed_ids=dimmed_ids,
             emphasized_edges=emphasized_edges,
+            direct_ids=direct_ids,
+            highlight_paths=highlight_paths,
         ),
         dependency_schema(policies),
         key=key,

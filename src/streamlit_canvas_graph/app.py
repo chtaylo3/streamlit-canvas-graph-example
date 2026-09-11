@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,10 @@ from streamlit_graph_canvas import GroupDisplay
 
 from streamlit_canvas_graph.canvas import CANVAS_ELEMENT_BUDGET, dependency_canvas
 from streamlit_canvas_graph.database import create_demo_dataset, snapshot_rows
+from streamlit_canvas_graph.dependency_context import (
+    dependency_chains,
+    direct_dependencies,
+)
 from streamlit_canvas_graph.graph import (
     add_peer_children,
     bounded_neighborhood,
@@ -187,6 +192,8 @@ def canvas_panel(
     emphasized_edges: set[tuple[str, str]],
     policies: dict[str, tuple[GroupDisplay, int]],
     current_repository: str | None,
+    direct_ids: set[str],
+    highlight_paths: bool,
 ) -> None:
     """Render the canvas in isolation from the rest of the page.
 
@@ -213,6 +220,8 @@ def canvas_panel(
         emphasized_edges=emphasized_edges,
         key=key,
         policies=policies,
+        direct_ids=direct_ids,
+        highlight_paths=highlight_paths,
     )
     clicked = result.selected_node_ids[-1] if result.selected_node_ids else None
     if clicked in graph and clicked != st.session_state.get("selected_id"):
@@ -225,7 +234,9 @@ def canvas_panel(
     st.caption(
         "Click a node to refocus; use a category's count marker to expand or collapse it. "
         "Counts describe distinct children loaded in this view, per relationship category. "
-        "Account and repository badges count outgoing children, excluding parents."
+        "Account and repository badges count outgoing children, excluding parents. "
+        "Dependency arrows point from a package to what it requires. "
+        "Direct badges refer to the manifest selected in Dependency context."
     )
 
 
@@ -396,8 +407,48 @@ def main() -> None:
         st.info(
             f"{hidden_peers} peer requirements omitted by the canvas budget. All peers remain listed in node details."
         )
+    manifests = (
+        sorted(
+            (
+                n
+                for n in graph.successors(current_repository)
+                if graph.nodes[n]["node_type"] == "manifest"
+            ),
+            key=lambda n: (
+                graph.nodes[n].get("metadata", {}).get("path", graph.nodes[n]["name"]),
+                n,
+            ),
+        )
+        if current_repository in graph
+        else []
+    )
+    if st.session_state.get("dependency_context") not in manifests:
+        st.session_state.dependency_context = next(
+            (n for n in trail if n in manifests), manifests[0] if manifests else None
+        )
+    if focus_id in manifests and st.session_state.get("context_focus") != focus_id:
+        st.session_state.dependency_context = focus_id
+    st.session_state.context_focus = focus_id
+    manifest_id = st.selectbox(
+        "Dependency context",
+        manifests,
+        format_func=lambda n: (
+            graph.nodes[n].get("metadata", {}).get("path", graph.nodes[n]["name"])
+        ),
+        key="dependency_context",
+        disabled=not manifests,
+    )
+    direct_ids = direct_dependencies(graph, manifest_id)
+    chains = dependency_chains(graph, manifest_id, focus_id)
+    path_edges = {(a, b) for chain in chains for a, b in pairwise(chain)}
+    # The existing canvas budget remains authoritative. Highlight the loaded
+    # portions of representative paths, and list complete paths in details.
+    highlight_paths = bool(chains)
     dimmed_ancestors = (nx.ancestors(graph, focus_id) & set(visible)) - set(trail)
     emphasized_edges = emphasized_context_edges(graph, focus_id, trail, set(visible))
+    if highlight_paths:
+        emphasized_edges = path_edges & set(visible.edges)
+        dimmed_ancestors = set(visible) - {n for chain in chains for n in chain}
     canvas, details = st.columns([3, 1], gap="large")
     with canvas:
         canvas_panel(
@@ -409,8 +460,38 @@ def main() -> None:
             emphasized_edges=emphasized_edges,
             policies=policies,
             current_repository=current_repository,
+            direct_ids=direct_ids,
+            highlight_paths=highlight_paths,
         )
     with details:
+        if manifest_id and graph.nodes[focus_id]["node_type"] == "dependency":
+            context_name = (
+                graph.nodes[manifest_id]
+                .get("metadata", {})
+                .get("path", graph.nodes[manifest_id]["name"])
+            )
+            if focus_id in direct_ids:
+                st.info(f"Direct dependency of {context_name}.")
+            indirect = [chain for chain in chains if len(chain) > 2]
+            if indirect:
+                st.write(
+                    "Also required through other dependencies."
+                    if focus_id in direct_ids
+                    else f"Transitive dependency of {context_name}."
+                )
+                st.caption(
+                    "One shortest chain per direct dependency; the canvas highlights loaded portions. Arrows mean ‘depends on’."
+                )
+                for chain in indirect[:20]:
+                    st.text(" → ".join(graph.nodes[n]["name"] for n in chain))
+                if len(indirect) > 20:
+                    st.caption(
+                        f"{len(indirect) - 20} more chains omitted from this list."
+                    )
+            elif focus_id not in direct_ids:
+                st.caption(
+                    f"No dependency chain recorded from direct dependencies of {context_name}."
+                )
         render_details(
             connection,
             snapshot_id,

@@ -1,8 +1,9 @@
 import networkx as nx
-from streamlit_graph_canvas import GroupDisplay, enable_renderers, serialize_graph
+from streamlit_graph_canvas import GroupDisplay, serialize_graph
 
 from streamlit_canvas_graph.canvas import (
     DEPENDENCY_SCHEMA,
+    _renderer_registry,
     build_canvas_graph,
     dependency_schema,
 )
@@ -49,7 +50,7 @@ def test_build_canvas_graph_preserves_explorer_semantics() -> None:
     serialized = serialize_graph(
         DEPENDENCY_SCHEMA,
         canvas,
-        renderer_registry=enable_renderers(["streamlit-graph-canvas-contrib"]),
+        renderer_registry=_renderer_registry(),
     )
     presentation = serialized.envelope["presentation"]
     serialized_nodes = {node["id"]: node for node in presentation["nodes"]}
@@ -62,7 +63,7 @@ def test_build_canvas_graph_preserves_explorer_semantics() -> None:
 def test_category_owners_have_no_ambiguous_degree_badge() -> None:
     for name, node_type in DEPENDENCY_SCHEMA.node_types.items():
         if name in {"manifest", "dependency"}:
-            assert node_type.badges == ()
+            assert all(b.name != "children" for b in node_type.badges)
         else:
             assert node_type.badges[0].name == "children"
 

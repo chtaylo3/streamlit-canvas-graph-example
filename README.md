@@ -250,3 +250,12 @@ node node_modules/@playwright/test/cli.js test --config playwright.example.confi
 
 This starts the real app with an isolated synthetic database; it does not modify
 your dependency snapshots.
+
+Dependency arrows point from a package to what it requires. Select a manifest in
+**Dependency context** to scope the **Direct** badges; choosing a manifest node
+also sets that context. A package keeps its badge even when other dependencies
+also require it. Selecting a package highlights one shortest chain through each
+reachable direct dependency and dims unrelated graph elements. The details panel
+lists up to 20 representative indirect chains alongside its direct status. The
+500-element canvas budget still applies, so only loaded portions are highlighted.
+Resolution membership and repository ownership retain their separate styling.

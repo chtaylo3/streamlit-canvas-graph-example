@@ -1,18 +1,18 @@
 # Local graph-canvas wheel
 
-The example app uses the wheel under `d76ff02d3aea/` through
+The example app uses the wheel under `3e13b131de38/` through
 `[tool.uv.sources]` in `pyproject.toml`. Run `uv sync --locked` from the app root.
 Use uv for this checkout: pip does not apply the source override.
 
 This wheel was rebuilt on September 11, 2026 from the sibling component checkout
 on branch `feat/canvas-display-and-routing`, including its existing development
-changes and the display-policy, edge-presentation, grouping, and routing changes.
+changes and the display-policy, edge-presentation, grouping, routing, and configurable arrowhead changes.
 It replaces the earlier child-groups wheel copied from `.venv/local-wheels/`.
 It is a local development build using version `0.1.0rc1`, not the PyPI artifact
 of that version. The contrib renderer remains pinned to the published package.
 
 SHA-256:
-`d76ff02d3aead85d3cc70460c36e8a2a63bd4e6d6fafc4bf88a29873bec63fc0`
+`3e13b131de38ed7e13ce1b6bd0e68d9bdf61f8cb1b394d49210a797779ba241c`
 
 The directory uses the first 12 hash characters so each rebuilt artifact has a
 new source path even if its package version has not changed. This prevents a
