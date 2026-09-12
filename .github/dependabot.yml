@@ -11,3 +11,10 @@ updates:
     directory: /
     schedule:
       interval: weekly
+  - package-ecosystem: npm
+    directory: /tests/browser
+    schedule:
+      interval: weekly
+    groups:
+      browser-test-dependencies:
+        patterns: ["*"]

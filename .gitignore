@@ -22,3 +22,8 @@ dist/
 .idea/
 .vscode/
 .DS_Store
+
+# Browser test dependencies and artifacts
+node_modules/
+test-results/
+playwright-report/

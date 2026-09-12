@@ -1,4 +1,4 @@
-"""Run the real app against isolated data for cross-repository browser tests."""
+"""Run the real app against isolated data for browser integration tests."""
 
 from __future__ import annotations
 

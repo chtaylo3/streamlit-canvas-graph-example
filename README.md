@@ -195,6 +195,23 @@ The application consumes the pinned `streamlit-graph-canvas` and
 renderer assets mean this example requires no local Node.js build. Update both
 pins together because the prerelease renderer contract is versioned as a pair.
 
+## Browser integration checks
+
+Run the browser suite from the app checkout:
+
+```bash
+cd tests/browser
+npm ci
+npx playwright install --with-deps chromium
+npm test
+```
+
+The **Frontend checks** CI job runs this suite against the locked PyPI packages.
+Node.js 24 is needed for browser tests, but not to run the app.
+This starts the real app with an isolated synthetic database; it does not modify
+your dependency snapshots.
+
+
 ## Data model
 
 The normalized contract contains `snapshots`, `nodes`, `edges`,
@@ -244,16 +261,6 @@ configures the loaded graph limit.
 Peer relationships now use the same component grouping mechanism as dependencies.
 Optional peers retain their `peer_requires` relationship and have dotted styling.
 
-Cross-repository browser verification (requires the sibling component checkout
-and its Playwright dependencies):
-
-```bash
-cd ../streamlit-graph-canvas/tests/e2e
-node node_modules/@playwright/test/cli.js test --config playwright.example.config.ts
-```
-
-This starts the real app with an isolated synthetic database; it does not modify
-your dependency snapshots.
 
 Dependency arrows point from a package to what it requires. Select a manifest in
 **Dependency context** to scope the **Direct** badges; choosing a manifest node
