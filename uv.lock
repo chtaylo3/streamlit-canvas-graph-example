@@ -1107,8 +1107,8 @@ requires-dist = [
     { name = "pytz", specifier = ">=2026.3.post1" },
     { name = "rich", specifier = ">=15.0.0" },
     { name = "streamlit", specifier = ">=1.62.0" },
-    { name = "streamlit-graph-canvas", path = "vendor/wheels/113e68b6a624/streamlit_graph_canvas-0.1.0rc1-py3-none-any.whl" },
-    { name = "streamlit-graph-canvas-contrib", specifier = "==0.1.0rc1" },
+    { name = "streamlit-graph-canvas", specifier = "==0.1.0rc2" },
+    { name = "streamlit-graph-canvas-contrib", specifier = "==0.1.0rc2" },
     { name = "typer", specifier = ">=0.27.1" },
 ]
 
@@ -1120,36 +1120,27 @@ dev = [
 
 [[package]]
 name = "streamlit-graph-canvas"
-version = "0.1.0rc1"
-source = { path = "vendor/wheels/113e68b6a624/streamlit_graph_canvas-0.1.0rc1-py3-none-any.whl" }
+version = "0.1.0rc2"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "packaging" },
     { name = "streamlit" },
 ]
+sdist = { url = "https://files.pythonhosted.org/packages/cd/32/d09288fd8557f04f4986b035cc576272f133b81f880c5584408b12aac102/streamlit_graph_canvas-0.1.0rc2.tar.gz", hash = "sha256:8171d27953ea2552c4e81cce25a042c5a8b03ad3d56193760d5e14ac749860a3", size = 785443, upload-time = "2026-09-12T00:53:57.388Z" }
 wheels = [
-    { filename = "streamlit_graph_canvas-0.1.0rc1-py3-none-any.whl", hash = "sha256:113e68b6a624168de3a6ec4bc580f06b32e232d4a1b5e441ad93644108332b62" },
+    { url = "https://files.pythonhosted.org/packages/d4/45/e272cb2ddfc41018c2155650fbf7f33640cb2ccc59ffeb89019863bbdcaa/streamlit_graph_canvas-0.1.0rc2-py3-none-any.whl", hash = "sha256:d5e2e0acb89c9be34b26e1befa6b6011309a0dc0dda1eee435268de813eb48ab", size = 723107, upload-time = "2026-09-12T00:53:54.484Z" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "networkx", marker = "extra == 'networkx'", specifier = ">=3.6.1" },
-    { name = "opentelemetry-api", marker = "extra == 'otel'", specifier = ">=1.30,<2" },
-    { name = "packaging", specifier = ">=26.0" },
-    { name = "pillow", marker = "extra == 'atlas'", specifier = ">=12.3.0,<13" },
-    { name = "streamlit", specifier = ">=1.62.0" },
-]
-provides-extras = ["atlas", "networkx", "otel"]
 
 [[package]]
 name = "streamlit-graph-canvas-contrib"
-version = "0.1.0rc1"
+version = "0.1.0rc2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "streamlit-graph-canvas" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3c/2d/efc500e7ff990812fd8075aaaceba0a72efb661d88c1c0f7c48cafe4eb3f/streamlit_graph_canvas_contrib-0.1.0rc1.tar.gz", hash = "sha256:86879184eb94d9e1e5ac3e0ca450570bf3cfd0cd3a5e12aae49ec88e65a58a2e", size = 7089, upload-time = "2026-09-02T03:07:27.932Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/3e/5e/d8507558c306501dcb41377d1815e03b778cc749ef5740bb055ce1289f5d/streamlit_graph_canvas_contrib-0.1.0rc2.tar.gz", hash = "sha256:3958c6b9477daebebbef13021aaec4c40512f362c6dd19550de591824eac9058", size = 7090, upload-time = "2026-09-12T00:53:58.894Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/bf/47/89d1851dbb905653cb30abd35dd2830ad1cc4daa298fc9121cef2f31a9d7/streamlit_graph_canvas_contrib-0.1.0rc1-py3-none-any.whl", hash = "sha256:07d562097515283e21241b076e09068740c8dc477826a85c16e604cdc706a5eb", size = 10449, upload-time = "2026-09-02T03:07:25.325Z" },
+    { url = "https://files.pythonhosted.org/packages/ed/cc/448076a881bd8a8c1f754d172da1df47cd71d1cd2343f47aae116ae6bab3/streamlit_graph_canvas_contrib-0.1.0rc2-py3-none-any.whl", hash = "sha256:fb9acc7a2edc482ded10ecaf1c8850776413445428a76d996a9be643b8a8d014", size = 10458, upload-time = "2026-09-12T00:53:56.13Z" },
 ]
 
 [[package]]

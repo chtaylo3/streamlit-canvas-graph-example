@@ -22,8 +22,8 @@ dependencies = [
     "pytz>=2026.3.post1",
     "rich>=15.0.0",
     "streamlit>=1.62.0",
-    "streamlit-graph-canvas==0.1.0rc1",
-    "streamlit-graph-canvas-contrib==0.1.0rc1",
+    "streamlit-graph-canvas==0.1.0rc2",
+    "streamlit-graph-canvas-contrib==0.1.0rc2",
     "typer>=0.27.1",
 ]
 
@@ -47,9 +47,6 @@ dev = [
     "pytest>=8.4.1",
     "ruff>=0.12.11",
 ]
-
-[tool.uv.sources]
-streamlit-graph-canvas = { path = "vendor/wheels/113e68b6a624/streamlit_graph_canvas-0.1.0rc1-py3-none-any.whl" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

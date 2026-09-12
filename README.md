@@ -11,15 +11,15 @@ GitHub credential.
 ## Quick start
 
 ```bash
-uv sync
+uv sync --locked
 uv run scg demo
 uv run streamlit-canvas-graph
 ```
 
-This checkout uses the locally built graph-canvas wheel stored in
-[`vendor/wheels`](vendor/wheels/README.md). `uv sync` installs that wheel through
-the source override in `pyproject.toml`; no separate manual installation is
-needed. The contrib renderer package remains pinned to its published version.
+This checkout uses `streamlit-graph-canvas==0.1.0rc2` and
+`streamlit-graph-canvas-contrib==0.1.0rc2` from PyPI. `uv sync --locked` installs
+the published packages using the versions and artifact hashes in `uv.lock`.
+No local component build or wheel source override is required.
 
 The demo command writes two deterministic snapshots, Parquet tables, and UUID
 ring thumbnails under the gitignored `data/demo/` directory. The app opens at
@@ -84,10 +84,10 @@ example secrets file.
 - Ancestors outside the active breadcrumb trail are dimmed while the active
   lineage and immediate descendant edges remain emphasized.
 - A rendered-element canvas budget applied after grouping, separate from the 20,000-element data-loading limit.
-- The reusable `streamlit-graph-canvas==0.1.0rc1` component supplies the typed
+- The reusable `streamlit-graph-canvas==0.1.0rc2` component supplies the typed
   graph contract, React Flow canvas, ELK layout, pan/zoom, controls, minimap,
   keyboard navigation, and validated selection state.
-- `streamlit-graph-canvas-contrib==0.1.0rc1` supplies explicitly enabled
+- `streamlit-graph-canvas-contrib==0.1.0rc2` supplies explicitly enabled
   outgoing-child-count badges without application-owned JavaScript.
 - Node metadata or enlarged ring details in the right panel.
 - Snapshot history, global node search, manual refresh, severity cards, and a
@@ -334,8 +334,8 @@ interactions do not rerun Streamlit.
 Developers can set `GraphSchema.label_policy` globally and replace it per type with
 `NodeType.label_policy`; see the reusable package README for validated combinations.
 
-The vendored component now reuses layout for label-policy and color changes,
+The rc2 component reuses layout for label-policy and color changes,
 reuses search results during geometry-only transitions, and closes label reveals
 when the canvas moves. Group visibility uses an adjacency traversal before the
 display budget is applied. These changes belong to the reusable component; the
-example receives them through its local wheel pin.
+example receives them through its published rc2 dependency.
