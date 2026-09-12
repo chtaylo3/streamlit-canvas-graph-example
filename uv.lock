@@ -1084,6 +1084,8 @@ dependencies = [
     { name = "pytz" },
     { name = "rich" },
     { name = "streamlit" },
+    { name = "streamlit-graph-canvas" },
+    { name = "streamlit-graph-canvas-contrib" },
     { name = "typer" },
 ]
 
@@ -1105,6 +1107,8 @@ requires-dist = [
     { name = "pytz", specifier = ">=2026.3.post1" },
     { name = "rich", specifier = ">=15.0.0" },
     { name = "streamlit", specifier = ">=1.62.0" },
+    { name = "streamlit-graph-canvas", specifier = "==0.1.0rc2" },
+    { name = "streamlit-graph-canvas-contrib", specifier = "==0.1.0rc2" },
     { name = "typer", specifier = ">=0.27.1" },
 ]
 
@@ -1112,6 +1116,31 @@ requires-dist = [
 dev = [
     { name = "pytest", specifier = ">=8.4.1" },
     { name = "ruff", specifier = ">=0.12.11" },
+]
+
+[[package]]
+name = "streamlit-graph-canvas"
+version = "0.1.0rc2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+    { name = "streamlit" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/cd/32/d09288fd8557f04f4986b035cc576272f133b81f880c5584408b12aac102/streamlit_graph_canvas-0.1.0rc2.tar.gz", hash = "sha256:8171d27953ea2552c4e81cce25a042c5a8b03ad3d56193760d5e14ac749860a3", size = 785443, upload-time = "2026-09-12T00:53:57.388Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d4/45/e272cb2ddfc41018c2155650fbf7f33640cb2ccc59ffeb89019863bbdcaa/streamlit_graph_canvas-0.1.0rc2-py3-none-any.whl", hash = "sha256:d5e2e0acb89c9be34b26e1befa6b6011309a0dc0dda1eee435268de813eb48ab", size = 723107, upload-time = "2026-09-12T00:53:54.484Z" },
+]
+
+[[package]]
+name = "streamlit-graph-canvas-contrib"
+version = "0.1.0rc2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "streamlit-graph-canvas" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3e/5e/d8507558c306501dcb41377d1815e03b778cc749ef5740bb055ce1289f5d/streamlit_graph_canvas_contrib-0.1.0rc2.tar.gz", hash = "sha256:3958c6b9477daebebbef13021aaec4c40512f362c6dd19550de591824eac9058", size = 7090, upload-time = "2026-09-12T00:53:58.894Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ed/cc/448076a881bd8a8c1f754d172da1df47cd71d1cd2343f47aae116ae6bab3/streamlit_graph_canvas_contrib-0.1.0rc2-py3-none-any.whl", hash = "sha256:fb9acc7a2edc482ded10ecaf1c8850776413445428a76d996a9be643b8a8d014", size = 10458, upload-time = "2026-09-12T00:53:56.13Z" },
 ]
 
 [[package]]

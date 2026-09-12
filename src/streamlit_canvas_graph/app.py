@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -8,17 +9,30 @@ import networkx as nx
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from streamlit_graph_canvas import GroupDisplay
 
-from streamlit_canvas_graph.canvas import canvas_available, dependency_canvas
+from streamlit_canvas_graph.canvas import (
+    CANVAS_ELEMENT_BUDGET,
+    CANVAS_LOADED_ELEMENT_BUDGET,
+    dependency_canvas,
+)
 from streamlit_canvas_graph.database import create_demo_dataset, snapshot_rows
+from streamlit_canvas_graph.dependency_context import (
+    dependency_chains,
+    direct_dependencies,
+)
 from streamlit_canvas_graph.graph import (
+    add_peer_children,
     bounded_neighborhood,
     breadcrumb_path,
     emphasized_context_edges,
     load_graph,
     node_metrics,
+    node_search_metrics,
+    peer_relationships,
     repository_scope,
     scoped_explore_paths,
+    structural_projection,
     thumbnail_path,
     vulnerabilities_for_node,
 )
@@ -27,12 +41,6 @@ from streamlit_canvas_graph.thumbnails import COLORS
 
 st.set_page_config(page_title="Dependency Explorer", page_icon="◉", layout="wide")
 
-TYPE_COLORS = {
-    "account": "#0f172a",
-    "repository": "#2563eb",
-    "manifest": "#7c3aed",
-    "dependency": "#0891b2",
-}
 EXPLORE_LABELS = {
     "repository": "Repositories",
     "manifest": "Manifests",
@@ -57,69 +65,16 @@ def open_database(path: str) -> duckdb.DuckDBPyConnection:
 def graph_for_snapshot(path: str, snapshot_id: str) -> nx.DiGraph:
     con = duckdb.connect(path, read_only=True)
     try:
-        return load_graph(con, snapshot_id)
+        graph = load_graph(con, snapshot_id)
+        findings = con.execute(
+            "SELECT dependency_id, advisory_id, severity FROM vulnerabilities WHERE snapshot_id = ?",
+            [snapshot_id],
+        ).fetchall()
+        for node, metrics in node_search_metrics(graph, findings).items():
+            graph.nodes[node]["search_metrics"] = metrics
+        return graph
     finally:
         con.close()
-
-
-def graph_figure(graph: nx.DiGraph, focus_id: str | None) -> go.Figure:
-    if not graph:
-        return go.Figure()
-    generations = (
-        list(nx.topological_generations(graph))
-        if nx.is_directed_acyclic_graph(graph)
-        else []
-    )
-    if generations:
-        positions: dict[str, tuple[float, float]] = {}
-        for column, generation in enumerate(generations):
-            for row, node_id in enumerate(generation):
-                positions[node_id] = (column * 2.5, -row * 1.6 + len(generation) * 0.8)
-    else:
-        positions = nx.spring_layout(graph, seed=7)
-    edge_x: list[float | None] = []
-    edge_y: list[float | None] = []
-    for source, target in graph.edges:
-        edge_x.extend((positions[source][0], positions[target][0], None))
-        edge_y.extend((positions[source][1], positions[target][1], None))
-    edges = go.Scatter(
-        x=edge_x,
-        y=edge_y,
-        mode="lines",
-        line={"color": "#cbd5e1", "width": 1.5},
-        hoverinfo="skip",
-    )
-    nodes = list(graph.nodes)
-    node_trace = go.Scatter(
-        x=[positions[node][0] for node in nodes],
-        y=[positions[node][1] for node in nodes],
-        mode="markers+text",
-        customdata=nodes,
-        text=[graph.nodes[node]["name"] for node in nodes],
-        textposition="bottom center",
-        hovertemplate="<b>%{text}</b><br>%{meta}<extra></extra>",
-        meta=[graph.nodes[node]["node_type"] for node in nodes],
-        marker={
-            "size": [34 if node == focus_id else 25 for node in nodes],
-            "color": [
-                TYPE_COLORS.get(graph.nodes[node]["node_type"], "#64748b")
-                for node in nodes
-            ],
-            "line": {"color": "#f8fafc", "width": 3},
-        },
-    )
-    figure = go.Figure([edges, node_trace])
-    figure.update_layout(
-        height=590,
-        margin={"l": 10, "r": 10, "t": 20, "b": 10},
-        paper_bgcolor="#f8fafc",
-        plot_bgcolor="#f8fafc",
-        showlegend=False,
-        dragmode="pan",
-        xaxis={"visible": False},
-        yaxis={"visible": False, "scaleanchor": "x", "scaleratio": 1},
-    )
-    return figure
 
 
 def ring_figure(metrics: dict[str, dict[str, int]]) -> go.Figure:
@@ -148,6 +103,15 @@ def ring_figure(metrics: dict[str, dict[str, int]]) -> go.Figure:
         legend={"orientation": "h"},
     )
     return figure
+
+
+def save_sibling_preferences(kind: str) -> None:
+    # Store outside widget state so Streamlit's cleanup on navigation cannot
+    # discard settings for a node type whose controls are no longer rendered.
+    st.session_state.sibling_preferences[kind] = (
+        st.session_state[f"siblings-enabled-{kind}"],
+        st.session_state[f"siblings-opacity-{kind}"] / 100,
+    )
 
 
 def select_node(
@@ -197,18 +161,15 @@ def render_details(
     st.caption(f"{data['node_type'].title()} · {data.get('ecosystem') or 'GitHub'}")
     image = thumbnail_path(data_root, node_id)
     if image.exists():
-        if st.button(
-            "Open ring details", key=f"ring-{node_id}", use_container_width=True
-        ):
+        if st.button("Open ring details", key=f"ring-{node_id}", width="stretch"):
             st.session_state.panel = "ring"
         st.image(str(image), width=105)
     if st.session_state.get("panel") == "ring":
         st.plotly_chart(
             ring_figure(node_metrics(connection, snapshot_id, node_id)),
-            use_container_width=True,
             config={"displayModeBar": False},
         )
-        if st.button("Back to metadata", use_container_width=True):
+        if st.button("Back to metadata", width="stretch"):
             st.session_state.panel = "metadata"
     else:
         fields: dict[str, Any] = {
@@ -221,6 +182,103 @@ def render_details(
         for key, value in fields.items():
             if value is not None:
                 st.markdown(f"**{key.replace('_', ' ').title()}**  \n{value}")
+        peers = peer_relationships(graph, node_id)
+        if peers:
+            st.markdown("**Peer requirements**")
+            st.dataframe(
+                pd.DataFrame(
+                    [
+                        {
+                            "Package": peer["name"],
+                            "Requested": peer["requested"] or "unspecified",
+                            "Installed": peer["version"] or "unknown",
+                            "Optional": "Yes" if peer["optional"] else "No",
+                        }
+                        for peer in peers
+                    ]
+                ),
+                hide_index=True,
+                width="stretch",
+            )
+
+
+@st.fragment
+def canvas_panel(
+    visible: nx.DiGraph,
+    graph: nx.DiGraph,
+    *,
+    key: str,
+    hidden: int,
+    dimmed_ids: set[str],
+    emphasized_edges: set[tuple[str, str]],
+    policies: dict[str, tuple[GroupDisplay, int]],
+    current_repository: str | None,
+    direct_ids: set[str],
+    highlight_paths: bool,
+    sibling_policies: dict[str, tuple[bool, float]],
+) -> None:
+    """Render the canvas in isolation from the rest of the page.
+
+    The canvas reports its viewport to Streamlit, and without a fragment every
+    pan and zoom would re-execute the whole script: the DuckDB queries, the
+    networkx neighbourhood, the plotly ring, and the vulnerability table. Those
+    runs take long enough to trip Streamlit's stale-element styling, which is why
+    the page dimmed while panning.
+
+    Inside a fragment, a canvas interaction reruns only this function. A node
+    click still needs the whole page, because the details column and the
+    vulnerability table both key off the selection, so those paths escalate with
+    an app-scoped rerun.
+    """
+
+    if hidden:
+        st.info(
+            f"The {CANVAS_LOADED_ELEMENT_BUDGET:,}-element data-loading limit omitted "
+            f"{hidden} nodes. These are not included in collection totals. "
+            "Use search to refocus."
+        )
+    focus = st.session_state.focus_id
+    kind = graph.nodes[focus]["node_type"]
+    cohort = (
+        (
+            kind,
+            tuple(sorted(set(graph.predecessors(focus)) & set(visible))),
+        )
+        if sibling_policies.get(kind, (False, 0.2))[0]
+        else None
+    )
+    preserve_viewport = (
+        cohort is not None and st.session_state.get("sibling_view_cohort") == cohort
+    )
+    result = dependency_canvas(
+        visible,
+        dimmed_ids=dimmed_ids,
+        emphasized_edges=emphasized_edges,
+        key=key,
+        policies=policies,
+        direct_ids=direct_ids,
+        highlight_paths=highlight_paths,
+        context_graph=graph,
+        context_anchor=st.session_state.focus_id,
+        sibling_policies=sibling_policies,
+        preserve_viewport=preserve_viewport,
+    )
+    st.session_state.sibling_view_cohort = cohort
+    clicked = result.selected_node_ids[-1] if result.selected_node_ids else None
+    if clicked in graph and clicked != st.session_state.get("selected_id"):
+        select_node(
+            clicked,
+            node_type=graph.nodes[clicked]["node_type"],
+            repository_id=repository_scope(graph, clicked, current_repository),
+        )
+        st.rerun(scope="app")
+    st.caption(
+        "Click a node to refocus; use a category's count marker to expand or collapse it. "
+        "Counts describe distinct children loaded in this view, per relationship category. "
+        "Account and repository badges count outgoing children, excluding parents. "
+        "Dependency arrows point from a package to what it requires. "
+        "Direct badges refer to the manifest selected in Dependency context."
+    )
 
 
 def main() -> None:
@@ -246,7 +304,8 @@ def main() -> None:
     snapshot_id = controls[0].selectbox(
         "Snapshot", list(labels), format_func=labels.get
     )
-    graph = graph_for_snapshot(str(db_path), snapshot_id)
+    relationship_graph = graph_for_snapshot(str(db_path), snapshot_id)
+    graph = structural_projection(relationship_graph)
     focus_id = st.session_state.get("focus_id")
     if focus_id not in graph:
         focus_id = next(
@@ -301,7 +360,7 @@ def main() -> None:
         key="jump_to_node",
         on_change=jump_to_selected_node,
     )
-    if controls[3].button("Refresh data", use_container_width=True):
+    if controls[3].button("Refresh data", width="stretch"):
         st.cache_data.clear()
         st.cache_resource.clear()
         st.rerun()
@@ -320,7 +379,7 @@ def main() -> None:
         if column.button(
             ("" if index == 0 else "› ") + graph.nodes[node_id]["name"],
             key=f"crumb-{snapshot_id}-{index}-{node_id}",
-            use_container_width=True,
+            width="stretch",
             disabled=node_id == focus_id,
         ):
             select_node(
@@ -329,66 +388,191 @@ def main() -> None:
                 repository_id=repository_scope(graph, node_id, current_repository),
             )
             st.rerun()
-    visible, hidden = bounded_neighborhood(graph, focus_id)
+    with st.expander("Canvas display"):
+        sibling_kind = graph.nodes[focus_id]["node_type"]
+        preferences = st.session_state.setdefault("sibling_preferences", {})
+        enabled, opacity = preferences.get(sibling_kind, (False, 0.2))
+        enabled_key = f"siblings-enabled-{sibling_kind}"
+        opacity_key = f"siblings-opacity-{sibling_kind}"
+        st.session_state.setdefault(enabled_key, enabled)
+        st.session_state.setdefault(opacity_key, round(opacity * 100))
+        st.caption(f"Sibling settings for {sibling_kind} nodes")
+        st.toggle(
+            "Show siblings",
+            key=enabled_key,
+            on_change=save_sibling_preferences,
+            args=(sibling_kind,),
+        )
+        st.slider(
+            "Opacity",
+            10,
+            80,
+            step=10,
+            key=opacity_key,
+            on_change=save_sibling_preferences,
+            args=(sibling_kind,),
+            help="Percent opaque. Settings are remembered separately for each node type. Siblings use only the remaining canvas budget.",
+        )
+        sibling_policies = dict(preferences)
+        sibling_policies[sibling_kind] = (
+            st.session_state[enabled_key],
+            st.session_state[opacity_key] / 100,
+        )
+        policies = {}
+        labels = {
+            "tree": "Always tree",
+            "collection": "Always collection",
+            "cutoff": "Use cutoff",
+        }
+        for kind in ("account", "repository", "manifest", "dependency"):
+            default = "tree" if kind == "account" else "cutoff"
+            columns = st.columns([2, 1])
+            mode = columns[0].radio(
+                f"{kind.title()} children",
+                list(labels),
+                format_func=labels.get,
+                index=list(labels).index(default),
+                key=f"display-{kind}",
+                horizontal=True,
+            )
+            threshold = columns[1].number_input(
+                f"{kind.title()} cutoff",
+                min_value=1,
+                value=12 if kind in {"repository", "manifest"} else 8,
+                step=1,
+                disabled=mode != "cutoff",
+                key=f"cutoff-{kind}",
+            )
+            policies[kind] = (GroupDisplay(mode), int(threshold))
+        st.caption(
+            "The cutoff applies separately to each relationship category. Grouping starts at the cutoff."
+        )
+        st.caption(
+            f"Canvas budget: {CANVAS_ELEMENT_BUDGET:,} rendered elements. "
+            "Collapsed members and replaced membership edges do not count."
+        )
+    candidates = [
+        node for node in graph if graph.nodes[node]["node_type"] == "manifest"
+    ]
+    if candidates and st.button("Explore dependency groups"):
+        target = max(candidates, key=lambda node: graph.out_degree(node))
+        select_node(
+            target,
+            node_type="manifest",
+            repository_id=repository_scope(graph, target, current_repository),
+        )
+        st.rerun()
+    peers = peer_relationships(relationship_graph, focus_id)
+    # Reserve capacity for eager peer delivery, leaving room for navigation.
+    reserved = min(len(peers) * 2, CANVAS_LOADED_ELEMENT_BUDGET // 2)
+    visible, hidden = bounded_neighborhood(
+        graph,
+        focus_id,
+        descendants=1,
+        limit=CANVAS_LOADED_ELEMENT_BUDGET - reserved,
+    )
+    visible, hidden_peers = add_peer_children(
+        visible,
+        relationship_graph,
+        focus_id,
+        max_elements=CANVAS_LOADED_ELEMENT_BUDGET,
+    )
+    if hidden_peers:
+        st.info(
+            f"{hidden_peers} peer requirements omitted by the data-loading limit. All peers remain listed in node details."
+        )
+    manifests = (
+        sorted(
+            (
+                n
+                for n in graph.successors(current_repository)
+                if graph.nodes[n]["node_type"] == "manifest"
+            ),
+            key=lambda n: (
+                graph.nodes[n].get("metadata", {}).get("path", graph.nodes[n]["name"]),
+                n,
+            ),
+        )
+        if current_repository in graph
+        else []
+    )
+    if st.session_state.get("dependency_context") not in manifests:
+        st.session_state.dependency_context = next(
+            (n for n in trail if n in manifests), manifests[0] if manifests else None
+        )
+    if focus_id in manifests and st.session_state.get("context_focus") != focus_id:
+        st.session_state.dependency_context = focus_id
+    st.session_state.context_focus = focus_id
+    manifest_id = st.selectbox(
+        "Dependency context",
+        manifests,
+        format_func=lambda n: (
+            graph.nodes[n].get("metadata", {}).get("path", graph.nodes[n]["name"])
+        ),
+        key="dependency_context",
+        disabled=not manifests,
+    )
+    direct_ids = direct_dependencies(graph, manifest_id)
+    chains = dependency_chains(graph, manifest_id, focus_id)
+    path_edges = {(a, b) for chain in chains for a, b in pairwise(chain)}
+    # The existing canvas budget remains authoritative. Highlight the loaded
+    # portions of representative paths, and list complete paths in details.
+    highlight_paths = bool(chains)
     dimmed_ancestors = (nx.ancestors(graph, focus_id) & set(visible)) - set(trail)
     emphasized_edges = emphasized_context_edges(graph, focus_id, trail, set(visible))
+    if highlight_paths:
+        emphasized_edges = path_edges & set(visible.edges)
+        dimmed_ancestors = set(visible) - {n for chain in chains for n in chain}
     canvas, details = st.columns([3, 1], gap="large")
     with canvas:
-        if hidden:
-            st.info(
-                f"Showing the highest-priority 500 nodes; {hidden} additional nodes are hidden. Use search or filters to refocus."
-            )
-        if canvas_available():
-            event = dependency_canvas(
-                visible,
-                focus_id,
-                data_root,
-                dimmed_ids=dimmed_ancestors,
-                emphasized_edges=emphasized_edges,
-                key=f"graph-{snapshot_id}",
-            )
-            if event and event.get("nonce") != st.session_state.get("canvas_nonce"):
-                st.session_state.canvas_nonce = event["nonce"]
-                clicked = event.get("nodeId")
-                if clicked in graph:
-                    select_node(
-                        clicked,
-                        panel="ring"
-                        if event.get("kind") == "thumbnail_select"
-                        else "metadata",
-                        node_type=graph.nodes[clicked]["node_type"],
-                        repository_id=repository_scope(
-                            graph, clicked, current_repository
-                        ),
-                    )
-                    st.rerun()
-        else:
-            event = st.plotly_chart(
-                graph_figure(visible, focus_id),
-                use_container_width=True,
-                config={"scrollZoom": True, "displaylogo": False},
-                on_select="rerun",
-                selection_mode="points",
-                key=f"graph-{snapshot_id}",
-            )
-            points = event.selection.points if event and event.selection else []
-            if points and points[0].get("customdata") in graph:
-                clicked = points[0]["customdata"]
-                if clicked != st.session_state.get("selected_id"):
-                    select_node(
-                        clicked,
-                        node_type=graph.nodes[clicked]["node_type"],
-                        repository_id=repository_scope(
-                            graph, clicked, current_repository
-                        ),
-                    )
-                    st.rerun()
-        st.caption(
-            "Click a node to refocus. The canvas shows two levels toward ancestors and one toward descendants."
+        canvas_panel(
+            visible,
+            graph,
+            key=f"graph-{snapshot_id}",
+            hidden=hidden,
+            dimmed_ids=dimmed_ancestors,
+            emphasized_edges=emphasized_edges,
+            policies=policies,
+            current_repository=current_repository,
+            direct_ids=direct_ids,
+            highlight_paths=highlight_paths,
+            sibling_policies=sibling_policies,
         )
     with details:
+        if manifest_id and graph.nodes[focus_id]["node_type"] == "dependency":
+            context_name = (
+                graph.nodes[manifest_id]
+                .get("metadata", {})
+                .get("path", graph.nodes[manifest_id]["name"])
+            )
+            if focus_id in direct_ids:
+                st.info(f"Direct dependency of {context_name}.")
+            indirect = [chain for chain in chains if len(chain) > 2]
+            if indirect:
+                st.write(
+                    "Also required through other dependencies."
+                    if focus_id in direct_ids
+                    else f"Transitive dependency of {context_name}."
+                )
+                st.caption(
+                    "One shortest chain per direct dependency; the canvas highlights loaded portions. Arrows mean ‘depends on’."
+                )
+                for chain in indirect[:20]:
+                    st.text(" → ".join(graph.nodes[n]["name"] for n in chain))
+                if len(indirect) > 20:
+                    st.caption(
+                        f"{len(indirect) - 20} more chains omitted from this list."
+                    )
+            elif focus_id not in direct_ids:
+                st.caption(
+                    f"No dependency chain recorded from direct dependencies of {context_name}."
+                )
         render_details(
-            connection, snapshot_id, graph, data_root, st.session_state.selected_id
+            connection,
+            snapshot_id,
+            relationship_graph,
+            data_root,
+            st.session_state.selected_id,
         )
     st.divider()
     st.subheader("Vulnerability posture")
@@ -408,7 +592,6 @@ def main() -> None:
         st.dataframe(
             frame,
             hide_index=True,
-            use_container_width=True,
             column_config={"advisory_url": st.column_config.LinkColumn("Advisory")},
         )
     else:

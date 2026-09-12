@@ -23,7 +23,7 @@ dist/
 .vscode/
 .DS_Store
 
-# Frontend developer artifacts (the packaged production bundle is under src/)
-frontend/node_modules/
-frontend/dist/
-frontend/*.tsbuildinfo
+# Browser test dependencies and artifacts
+node_modules/
+test-results/
+playwright-report/

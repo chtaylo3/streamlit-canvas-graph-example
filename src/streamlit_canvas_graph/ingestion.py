@@ -209,12 +209,15 @@ def _store_manifest(
         [snapshot_id, repo_id, manifest_id, EdgeType.CONTAINS, False, "{}"],
     )
     by_name: dict[str, str] = {}
+    by_location: dict[str, str] = {}
     dependency_ids: set[str] = set()
     direct_ids: set[str] = set()
     for package in parsed.packages:
         dependency_id = _store_package(connection, snapshot_id, package)
         dependency_ids.add(dependency_id)
         by_name[package.name.casefold()] = dependency_id
+        if package.location:
+            by_location[package.location] = dependency_id
         if package.direct:
             direct_ids.add(dependency_id)
             connection.execute(
@@ -223,29 +226,85 @@ def _store_manifest(
                     snapshot_id,
                     manifest_id,
                     dependency_id,
-                    EdgeType.DEPENDS_ON,
+                    (
+                        EdgeType.OPTIONAL_DEPENDS_ON
+                        if set(package.direct_relationships) == {"optional"}
+                        else EdgeType.PEER_REQUIRES
+                        if set(package.direct_relationships) == {"peer"}
+                        else EdgeType.DEPENDS_ON
+                    ),
                     True,
-                    json.dumps({"source": parsed.parser}),
+                    json.dumps(
+                        {
+                            "source": parsed.parser,
+                            "relationships": package.direct_relationships
+                            or ("dependency",),
+                            "optional": (
+                                set(package.direct_relationships) == {"optional"}
+                                or package.direct_optional
+                            ),
+                            **(
+                                {"target_location": package.location}
+                                if package.location
+                                else {}
+                            ),
+                        }
+                    ),
                 ],
             )
     adjacency: dict[str, set[str]] = {}
+    emitted_relationships: set[tuple[str, str, str]] = set()
     for package in parsed.packages:
-        source = by_name.get(package.name.casefold())
+        source = (
+            by_location.get(package.location) if package.location else None
+        ) or by_name.get(package.name.casefold())
         if not source:
             continue
-        for child_name, _ in package.dependencies:
-            target = by_name.get(child_name.casefold())
+        for relationship in package.dependencies:
+            if package.location:
+                target = (
+                    by_location.get(relationship.target_location)
+                    if relationship.target_location
+                    else None
+                )
+            else:
+                target = by_name.get(relationship.name.casefold())
             if target and source != target:
                 adjacency.setdefault(source, set()).add(target)
+                edge_type = {
+                    "optional": EdgeType.OPTIONAL_DEPENDS_ON,
+                    "peer": EdgeType.PEER_REQUIRES,
+                }.get(relationship.relationship, EdgeType.DEPENDS_ON)
+                edge_key = (source, target, str(edge_type))
+                if edge_key in emitted_relationships:
+                    continue
+                emitted_relationships.add(edge_key)
                 connection.execute(
                     "INSERT INTO edges VALUES (?, ?, ?, ?, ?, ?)",
                     [
                         snapshot_id,
                         source,
                         target,
-                        EdgeType.DEPENDS_ON,
+                        edge_type,
                         False,
-                        json.dumps({"source": parsed.parser}),
+                        json.dumps(
+                            {
+                                "source": parsed.parser,
+                                "relationship": relationship.relationship,
+                                "requested": relationship.specifier,
+                                "optional": relationship.optional,
+                                **(
+                                    {"source_location": package.location}
+                                    if package.location
+                                    else {}
+                                ),
+                                **(
+                                    {"target_location": relationship.target_location}
+                                    if relationship.target_location
+                                    else {}
+                                ),
+                            }
+                        ),
                     ],
                 )
     _anchor_dependency_components(

@@ -55,9 +55,23 @@ def test_package_lock_parses_direct_and_transitive_packages() -> None:
         ("platform-binary", False),
         ("test-helper", True),
         ("optional-helper", True),
-        ("host-library", False),
+        ("host-library", True),
     ]
-    assert parsed.packages[0].dependencies == [("beta", "^2")]
+    assert [
+        (
+            dependency.name,
+            dependency.specifier,
+            dependency.relationship,
+            dependency.target_location,
+        )
+        for dependency in parsed.packages[0].dependencies
+    ] == [("beta", "^2", "dependency", "node_modules/beta")]
+    assert parsed.packages[0].location == "node_modules/alpha"
+    assert parsed.packages[0].direct_relationships == ("dependency",)
+    host = next(
+        package for package in parsed.packages if package.name == "host-library"
+    )
+    assert host.direct_relationships == ("peer",)
 
 
 def test_package_lock_v1_uses_legacy_root_dependencies() -> None:
@@ -71,9 +85,44 @@ def test_package_lock_v1_uses_legacy_root_dependencies() -> None:
         },
     }
     parsed = parse_manifest("package-lock.json", json.dumps(payload))
-    assert [(package.name, package.direct) for package in parsed.packages] == [
-        ("alpha", True)
+    assert [
+        (package.name, package.direct, package.location) for package in parsed.packages
+    ] == [
+        ("alpha", True, "node_modules/alpha"),
+        ("beta", False, "node_modules/alpha/node_modules/beta"),
     ]
+    assert parsed.packages[0].dependencies[0].target_location == (
+        "node_modules/alpha/node_modules/beta"
+    )
+
+
+def test_package_lock_resolves_workspace_links_and_marks_them_direct() -> None:
+    payload = {
+        "lockfileVersion": 3,
+        "packages": {
+            "": {"dependencies": {"workspace-package": "file:packages/workspace"}},
+            "node_modules/workspace-package": {
+                "resolved": "packages/workspace",
+                "link": True,
+            },
+            "packages/workspace": {
+                "name": "workspace-package",
+                "version": "1.0.0",
+                "dependencies": {"child": "^2"},
+            },
+            "node_modules/child": {"name": "child", "version": "2.0.0"},
+        },
+    }
+
+    parsed = parse_manifest("package-lock.json", json.dumps(payload))
+    workspace = next(
+        package for package in parsed.packages if package.name == "workspace-package"
+    )
+
+    assert workspace.location == "packages/workspace"
+    assert workspace.direct
+    assert workspace.direct_relationships == ("dependency",)
+    assert workspace.dependencies[0].target_location == "node_modules/child"
 
 
 def test_uv_lock_parses_parent_relationships() -> None:
@@ -83,7 +132,10 @@ def test_uv_lock_parses_parent_relationships() -> None:
     )
     assert len(parsed.packages) == 2
     assert parsed.packages[0].direct
-    assert parsed.packages[0].dependencies == [("beta", "")]
+    assert [
+        (dependency.name, dependency.specifier)
+        for dependency in parsed.packages[0].dependencies
+    ] == [("beta", "")]
 
 
 def test_nuget_lock_parses_frameworks() -> None:

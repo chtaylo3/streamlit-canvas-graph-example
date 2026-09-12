@@ -8,6 +8,7 @@ from streamlit_canvas_graph.database import (
     connect,
     initialize_database,
     insert_node,
+    populate_metrics,
 )
 from streamlit_canvas_graph.github_client import Repository
 from streamlit_canvas_graph.ingestion import (
@@ -18,7 +19,12 @@ from streamlit_canvas_graph.ingestion import (
     redact_secrets,
 )
 from streamlit_canvas_graph.model import NodeType
-from streamlit_canvas_graph.parsers import Package, ParsedManifest, parse_manifest
+from streamlit_canvas_graph.parsers import (
+    Package,
+    PackageDependency,
+    ParsedManifest,
+    parse_manifest,
+)
 
 
 def test_manifest_edges_include_only_direct_dependencies(tmp_path) -> None:
@@ -53,7 +59,13 @@ def test_manifest_edges_include_only_direct_dependencies(tmp_path) -> None:
         "npm",
         "package-lock",
         [
-            Package("direct", "1.0.0", "npm", True, [("transitive", "^2")]),
+            Package(
+                "direct",
+                "1.0.0",
+                "npm",
+                True,
+                [PackageDependency("transitive", "^2")],
+            ),
             Package("transitive", "2.0.0", "npm", False),
         ],
     )
@@ -84,6 +96,172 @@ def test_manifest_edges_include_only_direct_dependencies(tmp_path) -> None:
         ("direct", "transitive", False),
         ("package-lock.json", "direct", True),
     ]
+
+
+def test_npm_relationships_resolve_by_location_before_identity_collapse(
+    tmp_path,
+) -> None:
+    connection = connect(tmp_path / "test.duckdb")
+    initialize_database(connection)
+    snapshot_id = "snapshot"
+    repository_id = "repository"
+    connection.execute(
+        "INSERT INTO snapshots VALUES (?, ?, ?, ?)",
+        [snapshot_id, datetime.now(UTC), "test", "{}"],
+    )
+    insert_node(
+        connection,
+        snapshot_id,
+        repository_id,
+        NodeType.REPOSITORY,
+        "example",
+    )
+    repository = Repository(
+        1,
+        "example/repository",
+        "repository",
+        "example",
+        True,
+        False,
+        "main",
+        1,
+        "https://github.com/example/repository",
+    )
+    parsed = parse_manifest(
+        "package-lock.json",
+        json.dumps(
+            {
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {
+                        "dependencies": {"parent": "^1", "alpha": "^2"},
+                        "optionalDependencies": {"root-optional": "^5"},
+                        "peerDependencies": {"host": "^4"},
+                        "peerDependenciesMeta": {"host": {"optional": True}},
+                    },
+                    "node_modules/parent": {
+                        "name": "parent",
+                        "version": "1.0.0",
+                        "dependencies": {"alpha": "^1"},
+                        "optionalDependencies": {"optional-child": "^3"},
+                        "peerDependencies": {"host": "^4"},
+                    },
+                    "node_modules/parent/node_modules/alpha": {
+                        "name": "alpha",
+                        "version": "1.5.0",
+                    },
+                    "node_modules/alpha": {
+                        "name": "alpha",
+                        "version": "2.5.0",
+                    },
+                    "node_modules/optional-child": {
+                        "name": "optional-child",
+                        "version": "3.1.0",
+                    },
+                    "node_modules/host": {
+                        "name": "host",
+                        "version": "4.2.0",
+                    },
+                    "node_modules/root-optional": {
+                        "name": "root-optional",
+                        "version": "5.1.0",
+                    },
+                    "node_modules/orphan": {
+                        "name": "orphan",
+                        "version": "9.0.0",
+                    },
+                },
+            }
+        ),
+    )
+
+    _store_manifest(connection, snapshot_id, repository_id, repository, parsed)
+    relationships = connection.execute(
+        """
+        SELECT source.name, source.version, target.name, target.version,
+               edges.edge_type, edges.metadata
+        FROM edges
+        JOIN nodes source ON source.snapshot_id = edges.snapshot_id
+                         AND source.node_id = edges.source_id
+        JOIN nodes target ON target.snapshot_id = edges.snapshot_id
+                         AND target.node_id = edges.target_id
+        WHERE edges.snapshot_id = ?
+          AND edges.edge_type IN
+              ('depends_on', 'optional_depends_on', 'peer_requires')
+          AND NOT edges.is_direct
+        ORDER BY edges.edge_type, target.name
+        """,
+        [snapshot_id],
+    ).fetchall()
+    resolves = connection.execute(
+        """
+        SELECT target.name
+        FROM edges
+        JOIN nodes target ON target.snapshot_id = edges.snapshot_id
+                         AND target.node_id = edges.target_id
+        WHERE edges.snapshot_id = ? AND edges.edge_type = 'resolves'
+        """,
+        [snapshot_id],
+    ).fetchall()
+    direct_relationships = connection.execute(
+        """
+        SELECT target.name, edges.edge_type, edges.metadata
+        FROM edges
+        JOIN nodes target ON target.snapshot_id = edges.snapshot_id
+                         AND target.node_id = edges.target_id
+        JOIN nodes source ON source.snapshot_id = edges.snapshot_id
+                         AND source.node_id = edges.source_id
+        WHERE edges.snapshot_id = ? AND source.node_type = 'manifest'
+          AND edges.is_direct
+        ORDER BY target.name
+        """,
+        [snapshot_id],
+    ).fetchall()
+    populate_metrics(connection, snapshot_id)
+    parent_scope = dict(
+        connection.execute(
+            """
+            SELECT category, count FROM ring_metrics
+            JOIN nodes ON nodes.snapshot_id = ring_metrics.snapshot_id
+                      AND nodes.node_id = ring_metrics.node_id
+            WHERE ring_metrics.snapshot_id = ? AND nodes.name = 'parent'
+              AND dimension = 'scope'
+            """,
+            [snapshot_id],
+        ).fetchall()
+    )
+    connection.close()
+
+    assert [(row[0], row[1], row[2], row[3], row[4]) for row in relationships] == [
+        ("parent", "1.0.0", "alpha", "1.5.0", "depends_on"),
+        ("parent", "1.0.0", "optional-child", "3.1.0", "optional_depends_on"),
+        ("parent", "1.0.0", "host", "4.2.0", "peer_requires"),
+    ]
+    metadata = {row[4]: json.loads(row[5]) for row in relationships}
+    assert metadata["optional_depends_on"] == {
+        "source": "package-lock",
+        "relationship": "optional",
+        "requested": "^3",
+        "optional": True,
+        "source_location": "node_modules/parent",
+        "target_location": "node_modules/optional-child",
+    }
+    assert metadata["peer_requires"]["optional"] is False
+    assert [(row[0], row[1]) for row in direct_relationships] == [
+        ("alpha", "depends_on"),
+        ("host", "peer_requires"),
+        ("parent", "depends_on"),
+        ("root-optional", "optional_depends_on"),
+    ]
+    peer_metadata = json.loads(direct_relationships[1][2])
+    assert peer_metadata["relationships"] == ["peer"]
+    assert peer_metadata["optional"] is True
+    root_optional_metadata = json.loads(direct_relationships[3][2])
+    assert root_optional_metadata["relationships"] == ["optional"]
+    assert root_optional_metadata["optional"] is True
+    assert parent_scope["direct"] == 2
+    assert parent_scope["peers"] == 1
+    assert resolves == [("orphan",)]
 
 
 def test_manifest_provenance_anchors_every_dependency_component(tmp_path) -> None:

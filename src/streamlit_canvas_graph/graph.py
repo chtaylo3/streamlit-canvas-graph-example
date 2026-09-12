@@ -8,6 +8,8 @@ from typing import Any
 import duckdb
 import networkx as nx
 
+PEER_EDGE_TYPE = "peer_requires"
+
 
 def load_graph(connection: duckdb.DuckDBPyConnection, snapshot_id: str) -> nx.DiGraph:
     graph = nx.DiGraph()
@@ -25,11 +27,115 @@ def load_graph(connection: duckdb.DuckDBPyConnection, snapshot_id: str) -> nx.Di
             metadata=json.loads(row[5]) if isinstance(row[5], str) else (row[5] or {}),
         )
     for row in connection.execute(
-        "SELECT source_id, target_id, edge_type, is_direct FROM edges WHERE snapshot_id = ?",
+        "SELECT source_id, target_id, edge_type, is_direct, metadata "
+        "FROM edges WHERE snapshot_id = ?",
         [snapshot_id],
     ).fetchall():
-        graph.add_edge(row[0], row[1], edge_type=row[2], is_direct=row[3])
+        source, target, edge_type, is_direct, raw_metadata = row
+        metadata = (
+            json.loads(raw_metadata)
+            if isinstance(raw_metadata, str)
+            else (raw_metadata or {})
+        )
+        if graph.has_edge(source, target):
+            edge = graph.edges[source, target]
+            edge["relationship_types"].add(edge_type)
+            edge["relationship_metadata"].setdefault(edge_type, []).append(metadata)
+            edge["is_direct"] = edge["is_direct"] or is_direct
+            if edge["edge_type"] == PEER_EDGE_TYPE and edge_type != PEER_EDGE_TYPE:
+                edge["edge_type"] = edge_type
+            continue
+        graph.add_edge(
+            source,
+            target,
+            edge_type=edge_type,
+            is_direct=is_direct,
+            relationship_types={edge_type},
+            relationship_metadata={edge_type: [metadata]},
+        )
     return graph
+
+
+def structural_projection(graph: nx.DiGraph) -> nx.DiGraph:
+    """Return the ownership graph used for navigation, excluding peer-only arcs."""
+    structural = graph.copy()
+    for source, target, data in list(structural.edges(data=True)):
+        relationships = set(data.get("relationship_types", {data.get("edge_type")}))
+        relationships.discard(PEER_EDGE_TYPE)
+        if not relationships:
+            structural.remove_edge(source, target)
+            continue
+        data["relationship_types"] = relationships
+        if data.get("edge_type") == PEER_EDGE_TYPE:
+            data["edge_type"] = min(relationships)
+    return structural
+
+
+def peer_relationships(graph: nx.DiGraph, node_id: str | None) -> list[dict[str, Any]]:
+    """Return installed peer requirements declared by one dependency node."""
+    if node_id not in graph or graph.nodes[node_id].get("node_type") != "dependency":
+        return []
+    relationships: list[dict[str, Any]] = []
+    for target in graph.successors(node_id):
+        edge = graph.edges[node_id, target]
+        edge_types = set(edge.get("relationship_types", {edge.get("edge_type")}))
+        if PEER_EDGE_TYPE not in edge_types:
+            continue
+        records = edge.get("relationship_metadata", {}).get(PEER_EDGE_TYPE, [{}])
+        metadata = records[0] if records else {}
+        target_data = graph.nodes[target]
+        relationships.append(
+            {
+                "target_id": target,
+                "name": target_data.get("name", target),
+                "version": target_data.get("version"),
+                "requested": metadata.get("requested", ""),
+                "optional": bool(metadata.get("optional", False)),
+            }
+        )
+    return sorted(
+        relationships,
+        key=lambda item: (
+            item["optional"],
+            str(item["name"]).casefold(),
+            str(item["version"] or ""),
+        ),
+    )
+
+
+def add_peer_children(
+    visible: nx.DiGraph,
+    relationship_graph: nx.DiGraph,
+    focus_id: str,
+    *,
+    max_elements: int,
+) -> tuple[nx.MultiDiGraph, int]:
+    """Deliver real peer edges eagerly; disclosure belongs to the component.
+
+    Parallel edges preserve a package that is both an ordinary dependency and a
+    peer requirement. Report omitted peers separately from collapsed members.
+    """
+    result = nx.MultiDiGraph(visible)
+    hidden = 0
+    for peer in peer_relationships(relationship_graph, focus_id):
+        if focus_id not in result:
+            hidden += 1
+            continue
+        target = str(peer["target_id"])
+        cost = 1 + int(target not in result)
+        if result.number_of_nodes() + result.number_of_edges() + cost > max_elements:
+            hidden += 1
+            continue
+        if target not in result:
+            result.add_node(target, **relationship_graph.nodes[target])
+        result.add_edge(
+            focus_id,
+            target,
+            edge_type=PEER_EDGE_TYPE,
+            requested=peer["requested"],
+            optional=peer["optional"],
+        )
+    return result, hidden
 
 
 def bounded_neighborhood(
@@ -59,7 +165,20 @@ def bounded_neighborhood(
             graph.nodes[node].get("name", "").lower(),
         ),
     )
-    selected = ranked[:limit]
+    selected: list[str] = []
+    selected_set: set[str] = set()
+    edge_count = 0
+    for node in ranked:
+        added_edges = sum(
+            int(graph.has_edge(node, neighbor)) + int(graph.has_edge(neighbor, node))
+            for neighbor in selected_set
+        ) + int(graph.has_edge(node, node))
+        candidate_elements = len(selected) + 1 + edge_count + added_edges
+        if candidate_elements > limit:
+            continue
+        selected.append(node)
+        selected_set.add(node)
+        edge_count += added_edges
     return graph.subgraph(selected).copy(), max(0, len(visible) - len(selected))
 
 
@@ -199,7 +318,8 @@ def vulnerabilities_for_node(
         """
         WITH RECURSIVE descendants(id) AS (
             SELECT ? UNION SELECT e.target_id FROM edges e
-            JOIN descendants d ON e.source_id = d.id WHERE e.snapshot_id = ?
+            JOIN descendants d ON e.source_id = d.id
+            WHERE e.snapshot_id = ? AND e.edge_type != 'peer_requires'
         )
         SELECT v.advisory_id, n.name AS package, n.version, v.severity, v.cvss,
                v.summary, v.fixed_version, v.advisory_url
@@ -217,3 +337,59 @@ def vulnerabilities_for_node(
 
 def thumbnail_path(data_root: Path, node_id: str) -> Path:
     return data_root / "thumbnails" / f"{node_id}.png"
+
+
+def node_search_metrics(
+    graph: nx.DiGraph,
+    findings: list[tuple[str, str, str]],
+) -> dict[str, dict[str, int]]:
+    """Recorded metrics, independent of canvas visibility and collection state.
+
+    A finding is a (dependency ID, advisory ID) pair. Critical findings reached
+    through multiple paths are counted once. Transitive counts exclude the node's
+    own findings, including in cyclic graphs. Zero means none recorded, not proof
+    that the package was scanned or is vulnerability-free.
+    """
+    structural = structural_projection(graph)
+    high: dict[str, set[str]] = {}
+    critical = sorted(
+        {
+            (node, advisory)
+            for node, advisory, severity in findings
+            if severity.casefold() == "critical" and node in graph
+        }
+    )
+    own: dict[str, int] = {}
+    for index, (node, _) in enumerate(critical):
+        own[node] = own.get(node, 0) | (1 << index)
+    for node, advisory, severity in findings:
+        if severity.casefold() == "high":
+            high.setdefault(node, set()).add(advisory)
+    dag = nx.condensation(structural)
+    components = dag.graph["mapping"]
+    reachable: dict[int, int] = {}
+    for component in reversed(list(nx.topological_sort(dag))):
+        mask = 0
+        for node in dag.nodes[component]["members"]:
+            mask |= own.get(node, 0)
+        for child in dag.successors(component):
+            mask |= reachable[child]
+        reachable[component] = mask
+    return {
+        node: {
+            "direct_dependency_count": sum(
+                structural.nodes[child].get("node_type") == "dependency"
+                and "depends_on"
+                in structural.edges[node, child].get(
+                    "relationship_types",
+                    {structural.edges[node, child].get("edge_type")},
+                )
+                for child in structural.successors(node)
+            ),
+            "high_vulnerabilities": len(high.get(node, set())),
+            "critical_transitive_vulnerabilities": (
+                reachable[components[node]] & ~own.get(node, 0)
+            ).bit_count(),
+        }
+        for node in structural
+    }

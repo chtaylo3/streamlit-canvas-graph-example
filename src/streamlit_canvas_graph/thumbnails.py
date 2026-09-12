@@ -7,6 +7,7 @@ from PIL import Image, ImageDraw
 COLORS = {
     "direct": "#2563eb",
     "transitive": "#93c5fd",
+    "peers": "#9333ea",
     "major": "#7c3aed",
     "minor": "#a78bfa",
     "patch": "#ddd6fe",
